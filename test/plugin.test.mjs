@@ -5,7 +5,7 @@ import { createRequire } from "node:module";
 import { test } from "node:test";
 
 const require = createRequire(import.meta.url);
-const { app } = require("../dist/plugin.cjs");
+const { app } = require("./.build/plugin.cjs");
 const { Harness } = require("astra-plugin-sdk/testing");
 
 test("anim_studio_list answers with a JSON list", async () => {

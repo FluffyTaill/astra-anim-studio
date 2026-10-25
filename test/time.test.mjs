@@ -13,7 +13,7 @@ const cfg = path.join(appdata, "astra", "astra", "config");
 fs.mkdirSync(cfg, { recursive: true });
 
 const require = createRequire(import.meta.url);
-const { app, internals } = require("../dist/plugin.cjs");
+const { app, internals } = require("./.build/plugin.cjs");
 const { Harness } = require("astra-plugin-sdk/testing");
 const { buildToml, periodOf, timeMatters } = internals;
 
