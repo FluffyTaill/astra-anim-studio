@@ -8,6 +8,7 @@ const I18N = {
     noChars: "Персонажей VRM не найдено. Создай персонажа в Astra → Модель → Персонажи.",
     active: "сейчас надет",
     anims: "Анимации", none: "Пока пусто. Нажми «Добавить анимацию» — подойдут .vrma, .fbx (Mixamo) и .glb.",
+    show: "▶ Показать", showing: "Показываю…", shown: "Аватар перезапущен и играет анимацию (вместо приветствия). Изменения применены.",
     enabled: "Включена", bored: "Сама, от скуки", rare: "редко", often: "часто", music: "Под музыку",
     slow: "медленная", mid: "средняя", fast: "быстрая", inplace: "На месте", speed: "Скорость", del: "Удалить",
     state: "состояние", stateHint: "Нажми, чтобы скопировать. Посмотреть: Astra → Модель → Анимации → «Показать». Реакция на событие: Модель → Триггеры.",
@@ -39,6 +40,7 @@ const I18N = {
     noChars: "No VRM characters found. Create one in Astra → Model → Characters.",
     active: "worn now",
     anims: "Animations", none: "Nothing yet. Click “Add animation” — .vrma, .fbx (Mixamo) and .glb work.",
+    show: "▶ Show", showing: "Showing…", shown: "The avatar restarted and plays the animation (instead of the greeting). Changes applied.",
     enabled: "Enabled", bored: "On her own, when bored", rare: "rare", often: "often", music: "To music",
     slow: "slow", mid: "mid", fast: "fast", inplace: "In place", speed: "Speed", del: "Delete",
     state: "state", stateHint: "Click to copy. Preview: Astra → Model → Animations → “Show”. React to an event: Model → Triggers.",
@@ -73,6 +75,7 @@ let st = { anims: [], characters: { list: [] }, reroll: [20, 35] };
 let dirty = false;
 let banner = null; // {cls, text}
 let busy = false;
+let previewing = null;
 
 const call = (m, p = {}) => window.astra.callBackend(m, p);
 const esc = (x) => String(x ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -83,8 +86,9 @@ function toast(t) {
   clearTimeout(toast.t);
   toast.t = setTimeout(() => (el.style.display = "none"), 2600);
 }
-const weightToSlider = (w) => Math.round(Math.log(w / 0.005) / Math.log(30) * 100);
-const sliderToWeight = (v) => Math.round(0.005 * Math.pow(30, v / 100) * 1000) / 1000;
+// 0.01 … 1.0 (a plain idle pose weighs 1.0)
+const weightToSlider = (w) => Math.max(0, Math.min(100, Math.round(Math.log(w / 0.01) / Math.log(100) * 100)));
+const sliderToWeight = (v) => Math.round(0.01 * Math.pow(100, v / 100) * 1000) / 1000;
 
 async function refresh() {
   st = await call("getState");
@@ -130,7 +134,7 @@ function render() {
 }
 
 function animRow(a) {
-  const w = a.idle?.weight ?? 0.04;
+  const w = a.idle?.weight ?? 0.15;
   return `<div class="anim ${a.enabled ? "" : "off"}">
     <div>
       <input class="title" value="${esc(a.title)}" onchange="upd('${a.id}', {title: this.value})">
@@ -138,6 +142,7 @@ function animRow(a) {
         ${T("state")} <code title="${esc(T("stateHint"))}" onclick="copyState('as_${a.id}')">as_${esc(a.id)}</code></div>
     </div>
     <div class="row">
+      <button class="btn primary" onclick="preview('${a.id}')" ${busy ? "disabled" : ""}>${previewing === a.id ? T("showing") : T("show")}</button>
       <div class="opt"><div class="switch ${a.enabled ? "on" : ""}" onclick="upd('${a.id}', {enabled: ${!a.enabled}})"></div>${T("enabled")}</div>
       <button class="btn danger" onclick="del('${a.id}')">${T("del")}</button>
     </div>
@@ -201,6 +206,22 @@ async function apply() {
     banner = { cls: "err", text: e.message };
   }
   busy = false;
+  await refresh();
+}
+
+async function preview(id) {
+  busy = true;
+  previewing = id;
+  render();
+  try {
+    const r = await call("preview", { id });
+    banner = r.ok ? (r.problems?.length ? { cls: "err", text: `${T("problems")}\n${r.problems.join("\n")}` } : { cls: "ok", text: T("shown") })
+      : { cls: "err", text: T("timeout") };
+  } catch (e) {
+    banner = { cls: "err", text: e.message };
+  }
+  busy = false;
+  previewing = null;
   await refresh();
 }
 

@@ -1,7 +1,7 @@
 [plugin]
 id = "anim-studio"
 name = "Anim Studio"
-version = "1.0.0"
+version = "1.0.1"
 description = "Добавляй аватару свои анимации (VRMA, FBX из Mixamo, GLB) и выбирай, когда она их играет: от скуки, под музыку или по реакции. Add your own avatar animations and choose when she plays them."
 author = "Taill"
 license = "MIT"
