@@ -258,6 +258,41 @@ function fbxInPlace(b) {
   return { buf: fixed ? fbxWrite(f) : b, fixed };
 }
 
+// Same for glTF/VRMA: the hips' translation keys keep their height but take the first key's X/Z.
+// `only` limits it to one animation of a multi-animation .glb. The BIN chunk is edited in place.
+function gltfInPlace(b, only) {
+  const jsonLen = b.readUInt32LE(12);
+  const json = JSON.parse(b.subarray(20, 20 + jsonLen).toString("utf8"));
+  const binStart = 20 + jsonLen + 8;
+  const hips = new Set();
+  const hb = json.extensions?.VRMC_vrm_animation?.humanoid?.humanBones?.hips?.node;
+  if (Number.isInteger(hb)) hips.add(hb);
+  (json.nodes || []).forEach((n, i) => {
+    if (/(^|[:_\s])(hips|pelvis|root)$/i.test(n.name || "")) hips.add(i); // root motion lives on one of these
+  });
+  const out = Buffer.from(b);
+  let fixed = 0;
+  for (const anim of json.animations || []) {
+    if (only && anim.name !== only) continue;
+    for (const ch of anim.channels || []) {
+      if (!hips.has(ch.target?.node) || ch.target?.path !== "translation") continue;
+      const acc = json.accessors?.[anim.samplers?.[ch.sampler]?.output];
+      if (!acc || acc.sparse || acc.componentType !== 5126 || acc.type !== "VEC3" || acc.bufferView === undefined) continue;
+      const bv = json.bufferViews[acc.bufferView];
+      if ((bv.buffer || 0) !== 0) continue;
+      const start = binStart + (bv.byteOffset || 0) + (acc.byteOffset || 0);
+      const stride = bv.byteStride || 12;
+      const x0 = out.readFloatLE(start), z0 = out.readFloatLE(start + 8);
+      for (let k = 1; k < acc.count; k++) {
+        out.writeFloatLE(x0, start + k * stride);
+        out.writeFloatLE(z0, start + k * stride + 8);
+      }
+      fixed++;
+    }
+  }
+  return { buf: out, fixed };
+}
+
 // ── inspecting a file the user picked ───────────────────────────────────────
 
 function inspectFile(path) {
@@ -283,17 +318,25 @@ function uniqueId(db, base) {
   return id;
 }
 
+// The file the pack plays: the original, or — "in place" on — a copy with the hips locked.
+// Several animations can share one .glb, so a locked one gets a copy of its own.
+function clipFileOf(anim) {
+  return anim.kind === "glb" && anim.inplace ? `${anim.id}.glb` : anim.file;
+}
+
 function writeClipFile(anim, srcFile) {
   import_node_fs.mkdirSync(ORIG, { recursive: true });
   const orig = import_node_path.join(ORIG, anim.file);
   if (srcFile) import_node_fs.copyFileSync(srcFile, orig);
-  const dst = import_node_path.join(CLIPS, anim.file);
-  if (anim.kind === "fbx" && anim.inplace) {
-    const { buf } = fbxInPlace(import_node_fs.readFileSync(orig));
+  const dst = import_node_path.join(CLIPS, clipFileOf(anim));
+  if (anim.inplace) {
+    const src = import_node_fs.readFileSync(orig);
+    const { buf } = anim.kind === "fbx" ? fbxInPlace(src) : gltfInPlace(src, anim.kind === "glb" ? anim.source : undefined);
     import_node_fs.writeFileSync(dst, buf);
   } else {
     import_node_fs.copyFileSync(orig, dst);
   }
+  anim.clipFile = clipFileOf(anim);
 }
 
 function importFile({ path, picks, inplace, title }) {
@@ -309,10 +352,10 @@ function importFile({ path, picks, inplace, title }) {
     const anim = {
       id, title: (info.kind === "glb" ? a.name : title || a.name), file, kind: info.kind,
       source: info.kind === "glb" ? a.name : undefined, duration: a.duration,
-      inplace: info.kind === "fbx" ? inplace !== false : false, enabled: true, speed: 1,
+      inplace: inplace !== false, enabled: true, speed: 1,
       idle: { on: false, weight: 0.15 }, music: { slow: false, mid: false, fast: false }
     };
-    if (i === 0) writeClipFile(anim, path);
+    writeClipFile(anim, i === 0 ? path : undefined);
     db.anims.push(anim);
     added.push(anim);
   });
@@ -334,7 +377,7 @@ function buildToml(db, previewId) {
   const on = db.anims.filter((a) => a.enabled || a.id === previewId);
   for (const a of on) {
     L.push("[[clips]]", `name = ${tomlStr("as_" + a.id)}   # ${String(a.title).replace(/[\r\n]/g, " ")}`,
-      `file = ${tomlStr("clips/" + a.file)}`);
+      `file = ${tomlStr("clips/" + (a.clipFile || a.file))}`);
     if (a.source) L.push(`source = ${tomlStr(a.source)}`);
     L.push("loop = false", "fade = 0.5");
     if (a.speed && a.speed !== 1) L.push(`speed = ${Number(a.speed).toFixed(2)}`);
@@ -510,7 +553,11 @@ export const app = plugin({
         for (const k of ["title", "enabled", "speed", "inplace"]) if (k in patch) a[k] = patch[k];
         if (patch.idle) a.idle = { ...a.idle, ...patch.idle };
         if (patch.music) a.music = { ...a.music, ...patch.music };
-        if (a.kind === "fbx" && before !== a.inplace) writeClipFile(a);
+        if (before !== a.inplace) {
+          const old = a.clipFile || a.file;
+          writeClipFile(a);
+          if (old !== a.clipFile && old !== a.file) import_node_fs.rmSync(import_node_path.join(CLIPS, old), { force: true });
+        }
         saveDb(db);
         return a;
       },
@@ -520,12 +567,12 @@ export const app = plugin({
         db.anims = db.anims.filter((x) => x.id !== p.id);
         saveDb(db);
         writePack(db); // the pack must not keep naming a clip whose file is about to go
-        if (a && !db.anims.some((x) => x.file === a.file)) {
-          for (const f of [import_node_path.join(CLIPS, a.file), import_node_path.join(ORIG, a.file)]) {
-            try {
-              import_node_fs.rmSync(f, { force: true });
-            } catch {} // still open somewhere: the entry is gone, the file is merely left behind
-          }
+        const gone = a && a.clipFile && a.clipFile !== a.file ? [import_node_path.join(CLIPS, a.clipFile)] : [];
+        if (a && !db.anims.some((x) => x.file === a.file)) gone.push(import_node_path.join(CLIPS, a.file), import_node_path.join(ORIG, a.file));
+        for (const f of gone) {
+          try {
+            import_node_fs.rmSync(f, { force: true });
+          } catch {} // still open somewhere: the entry is gone, the file is merely left behind
         }
         return true;
       },

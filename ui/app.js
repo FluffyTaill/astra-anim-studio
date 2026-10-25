@@ -153,7 +153,7 @@ function animRow(a) {
       <div class="opt">${T("music")}:
         ${["slow", "mid", "fast"].map((b) => `<span class="chip ${a.music?.[b] ? "on" : ""}" onclick="upd('${a.id}', {music: {${b}: ${!a.music?.[b]}}})">${T(b)}</span>`).join("")}
       </div>
-      ${a.kind === "fbx" ? `<div class="opt"><div class="switch ${a.inplace ? "on" : ""}" onclick="upd('${a.id}', {inplace: ${!a.inplace}})"></div>${T("inplace")}</div>` : ""}
+      <div class="opt"><div class="switch ${a.inplace ? "on" : ""}" onclick="upd('${a.id}', {inplace: ${!a.inplace}})"></div>${T("inplace")}</div>
       <div class="opt">${T("speed")} <input type="range" min="50" max="150" value="${Math.round((a.speed || 1) * 100)}" onchange="upd('${a.id}', {speed: this.value / 100})"><span class="muted">×${(a.speed || 1).toFixed(2)}</span></div>
     </div>
   </div>`;
@@ -275,7 +275,7 @@ ${why}` };
       <div style="max-height:300px;overflow:auto;margin:6px 0 10px">${info.animations.map((a, i) => `
         <label><input type="checkbox" class="pick" value="${esc(a.name)}" ${i < 1 ? "checked" : ""}> ${esc(a.name)} <span class="muted">${a.duration} ${T("sec")}</span></label>`).join("")}</div>`
       : `<div class="muted">${T("impTitle")}</div><input class="text" id="impTitle" value="${esc(name)}" style="margin:6px 0 10px">`}
-    ${info.kind === "fbx" ? `<label><input type="checkbox" id="impInplace" checked> ${T("impInplace")}</label>` : ""}
+    <label><input type="checkbox" id="impInplace" checked> ${T("impInplace")}</label>
     <div class="row" style="justify-content:flex-end;margin-top:14px">
       <button class="btn" id="impCancel">${T("cancel")}</button>
       <button class="btn primary" id="impOk">${T("impOk")}</button>
