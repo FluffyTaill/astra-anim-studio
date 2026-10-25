@@ -35,10 +35,17 @@
 
 ## Сборка из исходников
 
+Нужны [bun](https://bun.sh) и [astra-plugin](https://github.com/mihailinl/AstraPlugins/blob/HEAD/docs/en/install-cli.md) 0.5.0+.
+
 ```
-node build.js
+bun install
+bun run test
+astra-plugin check . --strict
+astra-plugin test .
+astra-plugin build .
 ```
-SDK плагинов берётся из любого уже установленного плагина Astra. Результат — `anim-studio.astraplugin`.
+
+Релизы собирает и подписывает GitHub Actions (`.github/workflows/release.yml`) по тегу `vX.Y.Z`.
 
 ---
 

@@ -1,3 +1,4 @@
+// @ts-nocheck — plain JavaScript in a .ts file: esbuild bundles it, nothing here is type-checked.
 // Anim Studio — Astra plugin: install your own avatar animations without editing TOML by hand.
 //
 // It keeps ONE add-on animation pack, `animpacks/anim-studio/`, generated from `studio.json`, and
@@ -8,11 +9,11 @@
 //   * "when bored" adds it to `idle` as a rare variant (merge = "extend");
 //   * "to music" adds it to dance_slow / dance_mid / dance_fast (merge = "extend").
 // After a change the avatar engine is restarted (Astra brings it back by itself).
-var import_node_fs = require("node:fs");
-var import_node_path = require("node:path");
-var import_node_zlib = require("node:zlib");
-var import_node_child_process = require("node:child_process");
-var { plugin, tool, s } = require_dist();
+import * as import_node_fs from "node:fs";
+import * as import_node_path from "node:path";
+import * as import_node_zlib from "node:zlib";
+import * as import_node_child_process from "node:child_process";
+import { plugin, s, tool } from "astra-plugin-sdk";
 
 var CFG = import_node_path.join(process.env.APPDATA || "", "astra", "astra", "config");
 var PACK_ROOT = import_node_path.join(CFG, "companion", "pack");
@@ -261,6 +262,7 @@ function fbxInPlace(b) {
 
 function inspectFile(path) {
   const ext = import_node_path.extname(path).toLowerCase();
+  if (!import_node_fs.existsSync(path)) throw new Error(`file not found: ${path}`);
   if (!EXTS.includes(ext)) throw new Error("unsupported");
   if (ext === ".fbx") {
     const info = fbxInfo(import_node_fs.readFileSync(path));
@@ -473,7 +475,7 @@ function getState() {
   return { anims: db.anims, reroll: db.reroll || [20, 35], characters: listCharacters(), folder: STUDIO };
 }
 
-var app = plugin({
+export const app = plugin({
   id: "anim-studio",
   tools: {
     anim_studio_list: tool({
@@ -488,14 +490,14 @@ var app = plugin({
   ui: {
     contributions: [{
       id: "anim-studio", slot: "page.custom", label: "Anim Studio",
-      icon_svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="4.5" r="2"/><path d="M12 7v6l-3 6M12 13l3 6M7 10l5-2 5 2"/></svg>',
+      iconSvg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="4.5" r="2"/><path d="M12 7v6l-3 6M12 13l3 6M7 10l5-2 5 2"/></svg>',
       url: "index.html", width: 0, height: 0, transparent: true
     }],
     onCall: {
       getState: async () => getState(),
       pickFile: async () => ({
         // a top-most owner keeps the dialog in front of the Astra window
-        path: await powershell("Add-Type -AssemblyName System.Windows.Forms; $o=New-Object System.Windows.Forms.Form -Property @{TopMost=$true;ShowInTaskbar=$false;WindowState='Minimized'}; $d=New-Object System.Windows.Forms.OpenFileDialog; $d.Filter='Animations (*.vrma;*.fbx;*.glb)|*.vrma;*.fbx;*.glb|All files (*.*)|*.*'; if($d.ShowDialog($o) -eq 'OK'){Write-Output $d.FileName}; $o.Dispose()", 600000)
+        path: await powershell("[Console]::OutputEncoding=[Text.Encoding]::UTF8; Add-Type -AssemblyName System.Windows.Forms; $o=New-Object System.Windows.Forms.Form -Property @{TopMost=$true;ShowInTaskbar=$false;WindowState='Minimized'}; $d=New-Object System.Windows.Forms.OpenFileDialog; $d.Filter='Animations (*.vrma;*.fbx;*.glb)|*.vrma;*.fbx;*.glb|All files (*.*)|*.*'; if($d.ShowDialog($o) -eq 'OK'){Write-Output $d.FileName}; $o.Dispose()", 600000)
       }),
       inspectFile: async (p) => inspectFile(String(p.path || "")),
       importFile: async (p) => importFile(p),

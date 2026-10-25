@@ -232,8 +232,10 @@ async function startImport() {
   let info;
   try {
     info = await call("inspectFile", { path });
-  } catch {
-    banner = { cls: "err", text: T("unsupported") };
+  } catch (e) {
+    const why = String(e?.message || "");
+    banner = { cls: "err", text: /unsupported|noanims/.test(why) ? T("unsupported") : `${T("unsupported")}
+${why}` };
     return render();
   }
   const name = path.split(/[\\/]/).pop().replace(/\.[^.]+$/, "");
