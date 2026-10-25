@@ -15,13 +15,28 @@ const I18N = {
     copied: "Скопировано", sec: "с",
     dirty: "Есть изменения — нажми «Применить», аватар перезапустится на пару секунд.",
     applied: (r) => `Готово: набор «${r.pack}» загружен, ${r.clips} анимаций.`,
-    problems: "Движок сообщил о проблемах:", timeout: "Аватар не ответил за 30 с — проверь, что Astra запущена.",
+    problems: "Движок сообщил о проблемах:", timeout: "Аватар не ответил за 90 с — проверь, что Astra запущена.",
     confirmDel: (t) => `Удалить «${t}»?`,
     imp: "Добавить анимацию", impTitle: "Название", impPick: "Какие анимации взять из файла", impInplace: "Закрепить на месте (не уходит за край окна) — рекомендуется для танцев",
     impNotHuman: "В файле не найден человеческий скелет (Hips). Анимация может не подойти аватару.",
     impOk: "Добавить", cancel: "Отмена", added: (n) => `Добавлено: ${n}. Теперь выбери, когда играть, и нажми «Применить».`,
     unsupported: "Этот файл не подходит: нужен .vrma, .fbx (Binary) или .glb с анимациями.",
     settings: "Танцы под музыку", reroll: "Менять танец каждые", to: "–",
+    times: "Время", morning: "утро", day: "день", evening: "вечер", night: "ночь", anyTime: "в любое время",
+    impTimes: "Когда играть (от скуки и под музыку)", lastTime: "Хотя бы одна часть суток должна остаться",
+    timesHint: "утро 5–12 · день 12–18 · вечер 18–24 · ночь 0–5. Когда наступает другая часть суток, аватар перезапускается сам — как только ты минуту не трогаешь компьютер.",
+    now: "сейчас",
+    edit: "✎ Редактор", face: "Мимика", faceNone: "нет", happy: "радость", angry: "злость", sad: "грусть", relaxed: "спокойствие", surprised: "удивление",
+    fingersLbl: "Пальцы", fingersStraight: "как в анимации", fingersHint: "Насколько согнуть пальцы к ладони поверх анимации — у Mixamo они часто прямые, как доска.",
+    impFace: "Мимика лица (FBX станет VRMA)", impFingers: "Расслабить пальцы",
+    life: "Время суток", lifeOn: "Поведение по времени суток", lifeVoice: "Говорить фразы",
+    lifeHint: "Утром потягивается и здоровается, после долгого отсутствия машет, вечером иногда зевает, после полуночи зевает и намекает, что пора спать. В играх молчит.",
+    lifeMorning: "Утро, первый раз за день", lifeBack: "Вернулся после 20+ минут", lifeEvening: "Вечер, после 22:00", lifeNight: "После полуночи",
+    lifeNone: "— ничего —", lifeOwn: "из набора персонажа", lifeTest: "▶",
+    cmds: "Команды Astra", cmdsOk: "Команды на месте — аватар будет реагировать и говорить.",
+    cmdsMissing: "Чтобы аватар реагировал и говорил, нужны две команды Astra. Плагин может создать их сам.",
+    cmdsRestart: "Команды записаны. Перезапусти Astra (значок в трее → Выход, затем открой снова), чтобы она их подхватила. До перезапуска не меняй команды в Astra — она перезапишет файл.",
+    cmdsCreate: "Создать команды", cmdsCreated: (n) => `Создано команд: ${n}. Перезапусти Astra.`,
     help: "Где взять анимации и как это работает",
     helpBody: `<ul>
 <li><b>Mixamo</b> (бесплатно, вход через Adobe): <a href="https://www.mixamo.com" target="_blank">mixamo.com</a> → Animations → Download: <i>FBX Binary, Without Skin, 30 fps</i>.</li>
@@ -29,7 +44,7 @@ const I18N = {
 <li><b>Quaternius Universal Animation Library</b> (CC0): .glb с десятками анимаций — при добавлении выбери нужные.</li>
 <li>Unity-файлы <code>.anim</code> не подходят.</li>
 </ul>
-<p>Каждая анимация получает своё состояние <code>as_…</code>: его видно в Astra → Модель → Анимации (кнопка «Показать»), его можно привязать к событиям в Модель → Триггеры и к командам (действие «Анимация компаньона», режим state).</p>
+<p>Каждая анимация получает своё состояние <code>as_…</code>: его видно в Astra → Модель → Анимации (кнопка «Показать»), его можно привязать к событиям в Модель → Триггеры. Команды Astra («Анимация компаньона») запускают только состояния набора самого персонажа, поэтому «Показать» и реакции со своими анимациями работают через быстрый перезапуск аватара.</p>
 <p>«От скуки» — она сама иногда играет анимацию, когда стоит без дела. «Под музыку» — когда Astra слышит музыку нужного темпа.</p>`
   },
   en: {
@@ -47,13 +62,28 @@ const I18N = {
     copied: "Copied", sec: "s",
     dirty: "There are changes — click “Apply”, the avatar restarts for a couple of seconds.",
     applied: (r) => `Done: pack “${r.pack}” loaded, ${r.clips} animations.`,
-    problems: "The engine reported problems:", timeout: "The avatar did not answer in 30 s — check that Astra is running.",
+    problems: "The engine reported problems:", timeout: "The avatar did not answer in 90 s — check that Astra is running.",
     confirmDel: (t) => `Delete “${t}”?`,
     imp: "Add animation", impTitle: "Title", impPick: "Which animations to take from the file", impInplace: "Lock in place (does not slide out of the window) — recommended for dances",
     impNotHuman: "No humanoid skeleton (Hips) found in the file. It may not fit the avatar.",
     impOk: "Add", cancel: "Cancel", added: (n) => `Added: ${n}. Now choose when to play it and click “Apply”.`,
     unsupported: "This file won't work: use .vrma, .fbx (Binary) or .glb with animations.",
     settings: "Dancing to music", reroll: "Switch dance every", to: "–",
+    times: "Time", morning: "morning", day: "day", evening: "evening", night: "night", anyTime: "any time",
+    impTimes: "When to play it (when bored and to music)", lastTime: "At least one part of the day has to stay",
+    timesHint: "morning 5–12 · day 12–18 · evening 18–24 · night 0–5. When another part of the day begins the avatar restarts by itself — once you leave the computer alone for a minute.",
+    now: "now",
+    edit: "✎ Editor", face: "Face", faceNone: "none", happy: "happy", angry: "angry", sad: "sad", relaxed: "relaxed", surprised: "surprised",
+    fingersLbl: "Fingers", fingersStraight: "as animated", fingersHint: "How far the fingers bend towards the palm on top of the animation — Mixamo often leaves them straight as a board.",
+    impFace: "Face expression (an FBX becomes a VRMA)", impFingers: "Relax the fingers",
+    life: "Time of day", lifeOn: "Behaviour by the time of day", lifeVoice: "Say phrases",
+    lifeHint: "In the morning she stretches and says hello, after a long absence she waves, in the evening she yawns now and then, after midnight she yawns and hints it is time to sleep. Silent in games.",
+    lifeMorning: "Morning, first time that day", lifeBack: "Back after 20+ minutes", lifeEvening: "Evening, after 22:00", lifeNight: "After midnight",
+    lifeNone: "— nothing —", lifeOwn: "from the character's pack", lifeTest: "▶",
+    cmds: "Astra commands", cmdsOk: "The commands are in place — the avatar will react and talk.",
+    cmdsMissing: "For the avatar to react and talk, two Astra commands are needed. The plugin can create them.",
+    cmdsRestart: "The commands are written. Restart Astra (tray icon → Exit, then open it again) so it picks them up. Don't change commands in Astra before that — it would overwrite the file.",
+    cmdsCreate: "Create commands", cmdsCreated: (n) => `Commands created: ${n}. Restart Astra.`,
     help: "Where to get animations and how it works",
     helpBody: `<ul>
 <li><b>Mixamo</b> (free, Adobe sign-in): <a href="https://www.mixamo.com" target="_blank">mixamo.com</a> → Animations → Download: <i>FBX Binary, Without Skin, 30 fps</i>.</li>
@@ -61,7 +91,7 @@ const I18N = {
 <li><b>Quaternius Universal Animation Library</b> (CC0): .glb with dozens of animations — pick the ones you want when adding.</li>
 <li>Unity <code>.anim</code> files don't work.</li>
 </ul>
-<p>Each animation gets its own state <code>as_…</code>: see it in Astra → Model → Animations (“Show”), bind it to events in Model → Triggers and to commands (action “Companion animation”, mode state).</p>
+<p>Each animation gets its own state <code>as_…</code>: see it in Astra → Model → Animations (“Show”), bind it to events in Model → Triggers. Astra commands (“Companion animation”) only cue the states of the character’s own pack, so Show and reactions with studio animations go through a quick avatar restart.</p>
 <p>“When bored” — she sometimes plays it by herself while idle. “To music” — when Astra hears music of that tempo.</p>`
   }
 };
@@ -71,7 +101,12 @@ let lang = (() => {
 if (!I18N[lang]) lang = "en";
 const T = (k) => I18N[lang][k];
 
-let st = { anims: [], characters: { list: [] }, reroll: [20, 35] };
+let st = { anims: [], characters: { list: [] }, reroll: [20, 35], life: {}, commands: {} };
+const PERIODS = ["morning", "day", "evening", "night"];
+const EXPRESSIONS = ["happy", "angry", "sad", "relaxed", "surprised"];
+const OWN_STATES = { morning: "stretch", back: "hello", evening: "yawn", night: "yawn" };
+// no `times` = all four parts of the day
+const timesOf = (a) => (Array.isArray(a.times) && a.times.length ? a.times : PERIODS);
 let dirty = false;
 let banner = null; // {cls, text}
 let busy = false;
@@ -123,6 +158,7 @@ function render() {
     <h2>${T("anims")}</h2>
     ${st.anims.length ? st.anims.map(animRow).join("") : `<div class="empty">${T("none")}</div>`}
   </div>
+  ${lifeCard()}
   <div class="card">
     <h2>${T("settings")}</h2>
     <div class="row">${T("reroll")}
@@ -143,6 +179,7 @@ function animRow(a) {
     </div>
     <div class="row">
       <button class="btn primary" onclick="preview('${a.id}')" ${busy ? "disabled" : ""}>${previewing === a.id ? T("showing") : T("show")}</button>
+      ${a.kind === "glb" ? "" : `<button class="btn" onclick="openEditor('${a.id}')">${T("edit")}</button>`}
       <div class="opt"><div class="switch ${a.enabled ? "on" : ""}" onclick="upd('${a.id}', {enabled: ${!a.enabled}})"></div>${T("enabled")}</div>
       <button class="btn danger" onclick="del('${a.id}')">${T("del")}</button>
     </div>
@@ -153,10 +190,76 @@ function animRow(a) {
       <div class="opt">${T("music")}:
         ${["slow", "mid", "fast"].map((b) => `<span class="chip ${a.music?.[b] ? "on" : ""}" onclick="upd('${a.id}', {music: {${b}: ${!a.music?.[b]}}})">${T(b)}</span>`).join("")}
       </div>
+      <div class="opt" title="${esc(T("timesHint"))}">${T("times")}:
+        ${PERIODS.map((p) => `<span class="chip ${timesOf(a).includes(p) ? "on" : ""}" onclick="toggleTime('${a.id}', '${p}')">${T(p)}</span>`).join("")}
+      </div>
       <div class="opt"><div class="switch ${a.inplace ? "on" : ""}" onclick="upd('${a.id}', {inplace: ${!a.inplace}})"></div>${T("inplace")}</div>
       <div class="opt">${T("speed")} <input type="range" min="50" max="150" value="${Math.round((a.speed || 1) * 100)}" onchange="upd('${a.id}', {speed: this.value / 100})"><span class="muted">×${(a.speed || 1).toFixed(2)}</span></div>
+      ${a.kind === "glb" ? "" : `
+      <div class="opt">${T("face")}
+        <select class="text" style="width:auto" onchange="upd('${a.id}', {expr: this.value})">
+          ${["", ...EXPRESSIONS].map((e) => `<option value="${e}" ${(a.expr || "") === e ? "selected" : ""}>${e ? T(e) : T("faceNone")}</option>`).join("")}
+        </select></div>
+      <div class="opt" title="${esc(T("fingersHint"))}">${T("fingersLbl")} <input type="range" min="0" max="60" value="${a.fingers || 0}" onchange="upd('${a.id}', {fingers: Number(this.value)})"><span class="muted">${a.fingers ? `${a.fingers}°` : T("fingersStraight")}</span></div>`}
     </div>
   </div>`;
+}
+
+function lifeCard() {
+  const L = st.life || {};
+  const c = st.commands || {};
+  const all = ["anim_play", "anim_say"];
+  const listening = all.every((t) => c[t]?.listening);
+  const inFile = all.every((t) => c[t]?.inFile);
+  const cmds = listening ? `<div class="ok">${T("cmdsOk")}</div>`
+    : inFile ? `<div class="notice">${T("cmdsRestart")}</div>`
+    : `<div class="notice">${T("cmdsMissing")} <button class="btn primary" style="margin-left:8px" onclick="createCommands()">${T("cmdsCreate")}</button></div>`;
+  // what she can play: the state her own pack has for it, or any of the studio's animations
+  const select = (k) => {
+    const opts = [[OWN_STATES[k], `${OWN_STATES[k]} (${T("lifeOwn")})`], ["", T("lifeNone")], ...st.anims.map((a) => [`as_${a.id}`, a.title])];
+    if (L[k] && !opts.some(([v]) => v === L[k])) opts.push([L[k], L[k]]);
+    return `<select class="text" style="width:auto;min-width:200px" onchange="setLife({${k}: this.value})">
+      ${opts.map(([v, t]) => `<option value="${esc(v)}" ${v === (L[k] ?? "") ? "selected" : ""}>${esc(t)}</option>`).join("")}</select>`;
+  };
+  const row = (k, label, phrase) => `<div class="opt" style="justify-content:space-between;min-width:min(460px,100%)">
+    <span>${label}</span><span class="row">${select(k)}<button class="btn" title="${esc(label)}" onclick="testLife('${phrase}', '${k}')">${T("lifeTest")}</button></span></div>`;
+  return `<div class="card">
+    <h2>${T("life")} <span class="muted">· ${T("now")}: ${T(st.period || "day")}</span></h2>
+    <div class="muted" style="margin-bottom:10px">${T("lifeHint")}</div>
+    ${cmds}
+    <div class="opts" style="margin-bottom:10px">
+      <div class="opt"><div class="switch ${L.on ? "on" : ""}" onclick="setLife({on: ${!L.on}})"></div>${T("lifeOn")}</div>
+      <div class="opt"><div class="switch ${L.voice ? "on" : ""}" onclick="setLife({voice: ${!L.voice}})"></div>${T("lifeVoice")}</div>
+    </div>
+    ${L.on ? `<div style="display:grid;gap:8px">
+      ${row("morning", T("lifeMorning"), "morning")}${row("back", T("lifeBack"), "back")}
+      ${row("evening", T("lifeEvening"), "")}${row("night", T("lifeNight"), "night")}</div>` : ""}
+    <div class="muted" style="margin-top:10px">${T("timesHint")}</div>
+  </div>`;
+}
+
+async function toggleTime(id, p) {
+  const a = st.anims.find((x) => x.id === id);
+  const cur = timesOf(a);
+  const next = cur.includes(p) ? cur.filter((x) => x !== p) : [...cur, p];
+  if (!next.length) return toast(T("lastTime"));
+  await upd(id, { times: next });
+}
+async function setLife(patch) {
+  await call("setLife", { patch });
+  await refresh();
+}
+async function testLife(phrase, k) {
+  await call("testLife", { phrase, state: st.life?.[k] || "" });
+}
+async function createCommands() {
+  try {
+    const r = await call("createCommands");
+    banner = { cls: "ok", text: T("cmdsCreated")(r.added) };
+  } catch (e) {
+    banner = { cls: "err", text: e.message };
+  }
+  await refresh();
 }
 
 async function upd(id, patch) {
@@ -184,6 +287,31 @@ function ask(text, okLabel) {
     };
     document.body.appendChild(bg);
   });
+}
+
+// The editor (three.js + three-vrm, ~0.8 MB) is loaded the first time it is opened.
+function loadEditor() {
+  if (window.AnimEditor) return Promise.resolve(window.AnimEditor);
+  return (loadEditor.p ??= new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = "editor.js";
+    s.onload = () => resolve(window.AnimEditor);
+    s.onerror = () => reject(new Error("editor.js did not load"));
+    document.head.appendChild(s);
+  }));
+}
+async function openEditor(id) {
+  const a = st.anims.find((x) => x.id === id);
+  try {
+    const ed = await loadEditor();
+    await ed.open(a, {
+      lang, call, esc, toast, ask,
+      onSaved: () => { dirty = true; banner = null; refresh(); }
+    });
+  } catch (e) {
+    banner = { cls: "err", text: e.message };
+    render();
+  }
 }
 
 async function del(id) {
@@ -219,11 +347,24 @@ function toggleLang() {
   render();
 }
 
+// Apply and Show restart the avatar, which can take longer than a call may wait (Astra brings the
+// engine back after up to 30 s when it was restarted a few times in a row): the backend answers at
+// once with a job, and the page asks how it went.
+async function runJob(method, params) {
+  const started = await call(method, params);
+  for (let i = 0; i < 150; i++) {
+    await new Promise((r) => setTimeout(r, 1000));
+    const j = await call("job");
+    if (j && j.id === started.id && j.done) return j.result;
+  }
+  return { ok: false, note: "timeout" };
+}
+
 async function apply() {
   busy = true;
   render();
   try {
-    const r = await call("apply");
+    const r = await runJob("apply");
     if (!r.ok) banner = { cls: "err", text: T("timeout") };
     else if (r.problems?.length) banner = { cls: "err", text: `${T("problems")}\n${r.problems.join("\n")}` };
     else banner = { cls: "ok", text: T("applied")(r) };
@@ -240,7 +381,7 @@ async function preview(id) {
   previewing = id;
   render();
   try {
-    const r = await call("preview", { id });
+    const r = await runJob("preview", { id });
     banner = r.ok ? (r.problems?.length ? { cls: "err", text: `${T("problems")}\n${r.problems.join("\n")}` } : { cls: "ok", text: T("shown") })
       : { cls: "err", text: T("timeout") };
   } catch (e) {
@@ -275,6 +416,13 @@ ${why}` };
       <div style="max-height:300px;overflow:auto;margin:6px 0 10px">${info.animations.map((a, i) => `
         <label><input type="checkbox" class="pick" value="${esc(a.name)}" ${i < 1 ? "checked" : ""}> ${esc(a.name)} <span class="muted">${a.duration} ${T("sec")}</span></label>`).join("")}</div>`
       : `<div class="muted">${T("impTitle")}</div><input class="text" id="impTitle" value="${esc(name)}" style="margin:6px 0 10px">`}
+    <div class="muted">${T("impTimes")}</div>
+    <div class="row" style="margin:6px 0 4px">${PERIODS.map((p) => `<span class="chip on" data-time="${p}">${T(p)}</span>`).join("")}</div>
+    <div class="muted" style="margin-bottom:10px">${T("timesHint")}</div>
+    ${info.kind === "glb" ? "" : `
+    <div class="row" style="margin:6px 0">${T("impFace")}
+      <select class="text" style="width:auto" id="impExpr">${["", ...EXPRESSIONS].map((e) => `<option value="${e}">${e ? T(e) : T("faceNone")}</option>`).join("")}</select></div>
+    <label><input type="checkbox" id="impFingers" checked> ${T("impFingers")}</label>`}
     <label><input type="checkbox" id="impInplace" checked> ${T("impInplace")}</label>
     <div class="row" style="justify-content:flex-end;margin-top:14px">
       <button class="btn" id="impCancel">${T("cancel")}</button>
@@ -282,9 +430,17 @@ ${why}` };
     </div></div>`;
   document.body.appendChild(bg);
   bg.querySelector("#impCancel").onclick = () => bg.remove();
+  for (const chip of bg.querySelectorAll("[data-time]")) {
+    chip.onclick = () => {
+      if (chip.classList.contains("on") && bg.querySelectorAll("[data-time].on").length === 1) return toast(T("lastTime"));
+      chip.classList.toggle("on");
+    };
+  }
   bg.querySelector("#impOk").onclick = async () => {
     const picks = [...bg.querySelectorAll(".pick:checked")].map((x) => x.value);
-    const params = { path, title: bg.querySelector("#impTitle")?.value, inplace: bg.querySelector("#impInplace")?.checked };
+    const times = [...bg.querySelectorAll("[data-time].on")].map((x) => x.dataset.time);
+    const params = { path, title: bg.querySelector("#impTitle")?.value, inplace: bg.querySelector("#impInplace")?.checked, times,
+      expr: bg.querySelector("#impExpr")?.value || undefined, fingers: bg.querySelector("#impFingers")?.checked ? 20 : 0 };
     if (info.kind === "glb") {
       if (!picks.length) return;
       params.picks = picks;
