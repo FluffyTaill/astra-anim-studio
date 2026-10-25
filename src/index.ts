@@ -518,10 +518,15 @@ export const app = plugin({
         const db = loadDb();
         const a = db.anims.find((x) => x.id === p.id);
         db.anims = db.anims.filter((x) => x.id !== p.id);
-        if (a && !db.anims.some((x) => x.file === a.file)) {
-          for (const f of [import_node_path.join(CLIPS, a.file), import_node_path.join(ORIG, a.file)]) import_node_fs.rmSync(f, { force: true });
-        }
         saveDb(db);
+        writePack(db); // the pack must not keep naming a clip whose file is about to go
+        if (a && !db.anims.some((x) => x.file === a.file)) {
+          for (const f of [import_node_path.join(CLIPS, a.file), import_node_path.join(ORIG, a.file)]) {
+            try {
+              import_node_fs.rmSync(f, { force: true });
+            } catch {} // still open somewhere: the entry is gone, the file is merely left behind
+          }
+        }
         return true;
       },
       setReroll: async (p) => {

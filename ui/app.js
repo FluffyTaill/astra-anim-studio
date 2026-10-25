@@ -165,11 +165,37 @@ async function upd(id, patch) {
   banner = null;
   await refresh();
 }
+// Astra shows plugin pages in a sandboxed frame where window.confirm() is blocked (it silently
+// answers "no"), so questions are asked with an in-page dialog.
+function ask(text, okLabel) {
+  return new Promise((resolve) => {
+    const bg = document.createElement("div");
+    bg.className = "modal-bg";
+    bg.innerHTML = `<div class="modal"><h3>${esc(text)}</h3>
+      <div class="row" style="justify-content:flex-end;margin-top:14px">
+        <button class="btn" data-a="0">${T("cancel")}</button>
+        <button class="btn danger" data-a="1">${esc(okLabel)}</button>
+      </div></div>`;
+    bg.onclick = (e) => {
+      const a = e.target.dataset?.a;
+      if (a === undefined && e.target !== bg) return;
+      bg.remove();
+      resolve(a === "1");
+    };
+    document.body.appendChild(bg);
+  });
+}
+
 async function del(id) {
   const a = st.anims.find((x) => x.id === id);
-  if (!confirm(T("confirmDel")(a?.title || id))) return;
-  await call("deleteAnim", { id });
-  dirty = true;
+  if (!(await ask(T("confirmDel")(a?.title || id), T("del")))) return;
+  try {
+    await call("deleteAnim", { id });
+    dirty = true;
+    banner = null;
+  } catch (e) {
+    banner = { cls: "err", text: e.message };
+  }
   await refresh();
 }
 async function setChar(id, on) {
