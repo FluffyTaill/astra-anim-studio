@@ -1,0 +1,31 @@
+[plugin]
+id = "anim-studio"
+name = "Anim Studio"
+version = "1.0.0"
+description = "Добавляй аватару свои анимации (VRMA, FBX из Mixamo, GLB) и выбирай, когда она их играет: от скуки, под музыку или по реакции. Add your own avatar animations and choose when she plays them."
+author = "Taill"
+license = "MIT"
+icon = "icon.svg"
+call_timeout_secs = 600
+
+[entry]
+command = "node"
+args = ["dist/index.js"]
+runtimes = ["node"]
+
+[capabilities]
+tools = true
+ui_contributions = true
+
+[platform]
+os = ["windows"]
+arch = []
+
+[config]
+schema = """
+{"type":"object","properties":{}}
+"""
+
+[bundle]
+schema = "astra.bundle/2"
+target = "noarch"

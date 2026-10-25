@@ -1,0 +1,4 @@
+dist/
+MANIFEST.json
+*.astraplugin
+node_modules/
