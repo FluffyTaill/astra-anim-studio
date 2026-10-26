@@ -20,6 +20,7 @@ import * as import_node_path from "node:path";
 import * as import_node_zlib from "node:zlib";
 import * as import_node_child_process from "node:child_process";
 import { plugin, s, tool } from "astra-plugin-sdk";
+import { FX_SPRITES } from "./fx_sprites";
 
 var CFG = import_node_path.join(process.env.APPDATA || "", "astra", "astra", "config");
 var PACK_ROOT = import_node_path.join(CFG, "companion", "pack");
@@ -72,8 +73,13 @@ function atTime(anim, period) {
 
 // ── studio.json ─────────────────────────────────────────────────────────────
 
-// What she plays at each moment of the day: a state of the character's own pack (Vivid has these)
+// What she plays at each moment of the day: a state of the character's own pack (when it has them)
 // or one of the studio's `as_<id>`; "" = nothing.
+// Which character (one of her outfits) to wear by the part of the day and by the weather; "" = keep.
+// A weather rule wins over the time one. `last` is what the rules asked for last time: she is changed
+// only when that changes, so an outfit picked by hand stays until the next part of the day or weather.
+var OUTFIT_DEFAULTS = { on: false, time: { morning: "", day: "", evening: "", night: "" },
+  weather: { clear: "", cloud: "", rain: "", snow: "", storm: "" }, place: null, last: "" };
 var LIFE_DEFAULTS = { on: true, voice: true, morning: "stretch", back: "hello", evening: "yawn", night: "yawn" };
 
 function loadDb() {
@@ -85,6 +91,7 @@ function loadDb() {
     db = { version: 1, anims: [], reroll: [20, 35] };
   }
   db.life = { ...LIFE_DEFAULTS, ...db.life };
+  db.outfit = { ...OUTFIT_DEFAULTS, ...db.outfit, time: { ...OUTFIT_DEFAULTS.time, ...db.outfit?.time }, weather: { ...OUTFIT_DEFAULTS.weather, ...db.outfit?.weather } };
   return db;
 }
 
@@ -605,7 +612,9 @@ function vrmaInfo(b) {
   return { duration: Math.round(v.end * 1000) / 1000, bones: Object.keys(v.human), expressions: [...v.expr.keys()] };
 }
 
-function vrmaEdit(b, { expr, exprWeight = 1, fingers = 0, mirror, trim, bones, face } = {}) {
+// aliases: expression → the name the worn model keeps it under when that is not the standard one
+// (VRM 0.x models often carry "Surprised" as a custom expression); the track is written under both.
+function vrmaEdit(b, { expr, exprWeight = 1, fingers = 0, mirror, trim, bones, face, aliases = {} } = {}) {
   const hasBones = bones && Object.values(bones).some((k) => k?.length);
   const hasFace = face && Object.values(face).some((k) => k?.length);
   const hasTrim = Array.isArray(trim) && trim.length === 2;
@@ -704,6 +713,7 @@ function vrmaEdit(b, { expr, exprWeight = 1, fingers = 0, mirror, trim, bones, f
       nodes.push({ name: "expr_" + name });
     }
     exprMap[tr.kind][name] = { node: ni };
+    if (aliases[name] && aliases[name] !== name) exprMap.custom[aliases[name]] = { node: ni };
     tr.node = ni;
   }
   const scene = json.scenes?.[json.scene || 0]?.nodes || [];
@@ -767,7 +777,56 @@ function uniqueId(db, base) {
 var hasEdit = (e) => !!e && !!(e.mirror || Array.isArray(e.trim) || Object.values(e.bones || {}).some((k) => k?.length)
   || Object.values(e.face || {}).some((k) => k?.length));
 var touchedUp = (anim) => anim.kind !== "glb" && !!(EXPRESSIONS.includes(anim.expr) || anim.fingers > 0 || hasEdit(anim.edit));
-var editOf = (anim) => ({ expr: anim.expr, exprWeight: anim.exprWeight ?? 1, fingers: anim.fingers || 0, ...anim.edit });
+var editOf = (anim) => ({ expr: anim.expr, exprWeight: anim.exprWeight ?? 1, fingers: anim.fingers || 0, ...anim.edit, aliases: modelAliases() });
+
+// What the worn model calls each standard expression. VRM 1.0 names them as VRMA does; VRM 0.x has
+// joy / sorrow / fun / angry presets and no "surprised" one, so a model adds that as a custom group
+// ("Surprised"). An expression the model has no preset for is matched by its name.
+var EXPRESSION_NAMES = { happy: /^(happy|joy|smile)/i, sad: /^(sad|sorrow)/i, relaxed: /^(relax|fun)/i, angry: /^angry/i, surprised: /^surpris/i };
+var VRM0_PRESETS = { joy: "happy", sorrow: "sad", fun: "relaxed", angry: "angry", surprised: "surprised" };
+var aliasMemo = { key: "", value: {} };
+
+function modelAliases() {
+  try {
+    const { file } = editorModel();
+    const key = `${file}:${import_node_fs.statSync(file).mtimeMs}`;
+    if (aliasMemo.key === key) return aliasMemo.value;
+    // only the JSON chunk is needed, not the 20–75 MB of meshes
+    const fd = import_node_fs.openSync(file, "r");
+    let json;
+    try {
+      const head = Buffer.alloc(20);
+      import_node_fs.readSync(fd, head, 0, 20, 0);
+      const len = head.readUInt32LE(12);
+      const buf = Buffer.alloc(len);
+      import_node_fs.readSync(fd, buf, 0, len, 20);
+      json = JSON.parse(buf.toString("utf8"));
+    } finally {
+      import_node_fs.closeSync(fd);
+    }
+    const presets = new Set(), custom = [];
+    const v1 = json.extensions?.VRMC_vrm?.expressions;
+    if (v1) {
+      for (const n of Object.keys(v1.preset || {})) presets.add(n);
+      custom.push(...Object.keys(v1.custom || {}));
+    }
+    for (const g of json.extensions?.VRM?.blendShapeMaster?.blendShapeGroups || []) {
+      const p = VRM0_PRESETS[g.presetName];
+      if (p) presets.add(p);
+      else if (g.name) custom.push(g.name);
+    }
+    const value = {};
+    for (const [name, re] of Object.entries(EXPRESSION_NAMES)) {
+      if (presets.has(name)) continue;
+      const hit = custom.find((c) => re.test(c));
+      if (hit) value[name] = hit;
+    }
+    aliasMemo = { key, value };
+    return value;
+  } catch {
+    return {};
+  }
+}
 
 // The clip before any edit, as a VRMA: an FBX converted, locked in place when asked.
 function rawVrma(anim) {
@@ -874,7 +933,8 @@ function buildToml(db, previewId, period = currentPeriod(), quietGreet = "") {
       "[[states.greet.transitions]]", 'on = "clip_finished"', 'to = "idle"',
       "[[states.greet.transitions]]", 'on = "dragged"', 'to = "drag"', "");
   }
-  for (const a of on) {
+  // an animation put in her own pack has its state there
+  for (const a of on.filter((x) => !x.base)) {
     const st = "as_" + a.id;
     L.push(`[states.${st}]`, `clip = ${tomlStr(st)}`, "loop = false",
       `[[states.${st}.transitions]]`, 'on = "clip_finished"', 'to = "idle"',
@@ -886,6 +946,213 @@ function buildToml(db, previewId, period = currentPeriod(), quietGreet = "") {
 function writePack(db, previewId, quietGreet) {
   import_node_fs.mkdirSync(CLIPS, { recursive: true });
   import_node_fs.writeFileSync(import_node_path.join(STUDIO, "animpack.toml"), buildToml(db, previewId, undefined, quietGreet));
+  writeBaseFx(db, previewId);
+}
+
+// ── a face and an icon over her head while an animation plays ───────────────
+// The engine shows neither from a clip: a face comes from a pack effect's `face`, an icon from its
+// particles. An effect shows while the body is in one of its `pet_states`, and the engine only
+// reaches it through the effect `[interactions.none]` plays (the "hub"). And an add-on may not carry
+// effects at all ("those come from the base pack only"), so the studio keeps a block of its own in
+// the worn character's OWN pack — between two marker lines, rewritten each time — and adds its
+// effects to that pack's hub. A state, not a clip, is what gates them: she has the face and the
+// icon when the animation plays as itself (its state `as_<id>`), not as one of the random idle moves
+// or dances.
+var FX_ICONS = {
+  hearts: { prop: "builtin:nayu-anims/heart.png", emit: { offset: [0, 0.02, 0.1], radius: 0.08, arc: [30, 150], depth: 0.05, rate: [3, 4], burst: 3, max: 16, life: [1.2, 1.8], speed: [0.05, 0.1], rise: 0.12, drag: 1, size: [0.045, 0.065], pop: 0.2, fade: 0.45, tilt: [-20, 20], sway: 12, sway_hz: 1.4 } },
+  sparkle: { prop: "builtin:nayu-anims/sparkle.png", emit: { axes: "view", shape: "box", offset: [0, 0.08, 0.05], area: [0.42, 0.3], depth: 0.08, rate: [5, 7], burst: 4, max: 14, life: [0.5, 0.9], speed: [0, 0], rise: 0.03, size: [0.05, 0.08], pop: 0.25, fade: 0.25, tilt: [0, 0] } },
+  sweat: { prop: "sweat", emit: { axes: "view", shape: "box", offset: [0.1, 0.08, 0.12], area: [0.01, 0.01], depth: 0, rate: [0.7, 0.9], burst: 1, max: 2, life: [1.6, 2], speed: [0, 0], rise: -0.03, size: [0.06, 0.07], pop: 0.15, fade: 0.4, tilt: [-10, -10] } },
+  zzz: { prop: "zzz", emit: { axes: "view", shape: "box", offset: [0.1, 0.12, 0.12], area: [0.02, 0.02], depth: 0, rate: [1.2, 1.5], burst: 1, max: 5, life: [1.8, 2.2], speed: [0, 0], rise: 0.1, wind: [0.04, 0.06], size: [0.06, 0.09], pop: 0.2, fade: 0.5, tilt: [-15, 15], sway: 8, sway_hz: 0.8 } },
+  question: { prop: "question", emit: { axes: "view", shape: "box", offset: [0, 0.22, 0.1], area: [0.16, 0.03], depth: 0, rate: [0.9, 1.2], burst: 1, max: 3, life: [1.5, 2], speed: [0, 0], rise: 0.03, size: [0.08, 0.1], pop: 0.3, fade: 0.4, tilt: [-15, 15], sway: 10, sway_hz: 1 } },
+  tears: { prop: "builtin:nayu-anims/rain_drop.png", emit: { axes: "view", shape: "box", offset: [0, 0, 0.13], area: [0.07, 0.005], depth: 0, rate: [2.5, 3.5], max: 8, life: [0.6, 0.8], speed: [0, 0], rise: 0, fall: [0.25, 0.4], size: [0.035, 0.045], pop: 0, appear: 0.1, fade: 0.2, tilt: [0, 0] } },
+  notes: { prop: "note", emit: { offset: [0, 0.06, 0.02], radius: 0.2, arc: [10, 170], depth: 0.05, rate: [1.5, 2.2], burst: 2, max: 8, life: [1.6, 2.2], speed: [0.02, 0.05], rise: 0.1, drag: 1, size: [0.06, 0.08], pop: 0.2, fade: 0.5, tilt: [-25, 25], sway: 15, sway_hz: 1.2 } },
+  anger: { prop: "anger", emit: { axes: "view", shape: "box", offset: [0.11, 0.14, 0.14], area: [0.03, 0.03], depth: 0, rate: [1.6, 2], burst: 1, max: 2, life: [0.55, 0.7], speed: [0, 0], rise: 0, size: [0.1, 0.12], pop: 0.35, fade: 0.2, tilt: [-10, 10] } }
+};
+// counts are integers in the engine's schema, every other number a float (a TOML `1` is not a float)
+var FX_INTS = new Set(["burst", "max"]);
+var fnum = (x) => { const t = String(Math.round(Number(x) * 1000) / 1000); return t.includes(".") ? t : t + ".0"; };
+var tomlVal = (v, k = "") => (typeof v === "string" ? tomlStr(v) : FX_INTS.has(k) ? String(Math.round(v))
+  : Array.isArray(v) ? `[${v.map(fnum).join(", ")}]` : fnum(v));
+var fxPropName = (p) => "as_fx_" + (p.startsWith("builtin:") ? p.replace(/^.*\/(\w+)\.png$/, "$1") : p);
+
+// The face an effect can hold: one preset for the whole animation — the strongest of the editor's
+// face keys when it has them (they are written into the VRMA too, which the engine does not show),
+// else the expression picked in the list.
+function fxFace(a) {
+  let best = null;
+  for (const [preset, keys] of Object.entries(a.edit?.face || {})) {
+    if (!EXPRESSIONS.includes(preset)) continue;
+    for (const [, w] of keys || []) if (!best || w > best.weight) best = { preset, weight: w };
+  }
+  if (best) return best.weight > 0 ? { preset: best.preset, weight: Math.min(1, best.weight) } : null;
+  return EXPRESSIONS.includes(a.expr) ? { preset: a.expr, weight: Math.max(0.1, Math.min(1, Number(a.exprWeight) || 1)) } : null;
+}
+
+// the own pack a character plays from — null when it is built in or missing
+function basePackFile(charId = activeCharacter()) {
+  try {
+    const c = readCharacter(charId);
+    if (!c.animpack || c.animpack.includes(":")) return null;
+    const f = import_node_path.join(PACK_ROOT, "animpacks", c.animpack, "animpack.toml");
+    return import_node_fs.existsSync(f) ? f : null;
+  } catch {
+    return null;
+  }
+}
+
+var FX_BEGIN = "# ── Anim Studio: faces and icons (written by the plugin, rewritten on every Apply) ──";
+var FX_END = "# ── end of Anim Studio ──";
+var FX_DIR = "clips/anim-studio-fx";
+
+// The effect [interactions.none] plays in a pack — "" when it has none. No text: the worn one's pack.
+function fxHub(text = "") {
+  if (!text) {
+    try {
+      const f = basePackFile();
+      text = f ? import_node_fs.readFileSync(f, "utf8") : "";
+    } catch {
+      text = "";
+    }
+  }
+  const at = text.search(/^\[interactions\.none\]/m);
+  if (at < 0) return "";
+  const rest = text.slice(at + 1);
+  const end = rest.search(/^\[/m);
+  return /^\s*clip\s*=\s*"([^"]+)"/m.exec(end < 0 ? rest : rest.slice(0, end))?.[1] || "";
+}
+
+// the rows that give each animation its face and icon
+function fxToml(anims, previewId = "") {
+  const withFx = anims.filter((a) => FX_ICONS[a.fx] || fxFace(a));
+  if (!withFx.length) return [];
+  const L = [];
+  const props = new Set(withFx.map((a) => FX_ICONS[a.fx]?.prop).filter(Boolean));
+  if (withFx.some((a) => !FX_ICONS[a.fx])) props.add(FX_ICONS.hearts.prop); // a face alone still names a prop
+  for (const p of props) L.push("[[props]]", `name = ${tomlStr(fxPropName(p))}`, `file = ${tomlStr(p.startsWith("builtin:") ? p : `${FX_DIR}/${p}.png`)}`, "");
+  for (const a of withFx) {
+    const fx = FX_ICONS[a.fx];
+    const name = `as_fx_${a.id}`;
+    // with no `emit` table nothing is thrown: the face alone
+    // shown instead of the greeting (▶, a reaction, the time of day), it plays in `greet`
+    const states = [`as_${a.id}`, ...(a.id === previewId ? ["greet"] : [])];
+    L.push(`[effects.${name}]`, 'kind = "emit"', `prop = ${tomlStr(fxPropName(fx ? fx.prop : FX_ICONS.hearts.prop))}`,
+      `pet_states = [${states.map(tomlStr).join(", ")}]`, "fade_in = 0.3", "fade_out = 0.6");
+    if (fx) {
+      L.push(`[effects.${name}.emit]`, 'bone = "head"');
+      for (const [k, v] of Object.entries(fx.emit)) L.push(`${k} = ${tomlVal(v, k)}`);
+    }
+    const face = fxFace(a);
+    if (face) L.push(`[effects.${name}.face]`, `preset = ${tomlStr(face.preset)}`, `weight = ${tomlVal(face.weight)}`);
+    L.push("");
+  }
+  return L;
+}
+
+var reEscape = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+var BASE_DIR = "clips/anim-studio";
+
+// "В набор персонажа": the animation as a clip and a state of her OWN pack, so Astra lists it (Model →
+// Animations) and its triggers and commands cue it live — they only know the states of that pack.
+// The clip is named `asb_<id>` (the add-on keeps `as_<id>` for its idle and dance variants); the
+// state is the same `as_<id>` the add-on would have declared, so nothing that names it changes.
+function baseToml(anims, text) {
+  const L = [];
+  const has = (st) => new RegExp(`^\\[states\\.${st}\\]`, "m").test(text);
+  for (const a of anims.filter((x) => x.base)) {
+    L.push("[[clips]]", `name = ${tomlStr("asb_" + a.id)}   # ${String(a.title).replace(/[\r\n]/g, " ")}`,
+      `file = ${tomlStr(`${BASE_DIR}/${a.clipFile || a.file}`)}`);
+    if (a.source) L.push(`source = ${tomlStr(a.source)}`);
+    L.push("loop = false", `fade = ${Math.max(0, Math.min(2, Number(a.fade ?? 0.5))).toFixed(2)}`);
+    if (a.speed && a.speed !== 1) L.push(`speed = ${Number(a.speed).toFixed(2)}`);
+    const st = "as_" + a.id;
+    L.push("", `[states.${st}]`, `clip = ${tomlStr("asb_" + a.id)}`, "loop = false");
+    if (has("idle")) L.push(`[[states.${st}.transitions]]`, 'on = "clip_finished"', 'to = "idle"');
+    if (has("drag")) L.push(`[[states.${st}.transitions]]`, 'on = "dragged"', 'to = "drag"');
+    L.push("");
+  }
+  return L;
+}
+
+// A base pack's text with the studio's part as it should be: the old block cut out, "as_fx_…" names
+// dropped from the hub's `with`, then today's put back. Faces and icons need the hub; animations put
+// in the pack do not. "" when the pack can take nothing.
+function withBaseFx(text, anims, previewId = "") {
+  let t = text;
+  const b = t.indexOf(FX_BEGIN);
+  if (b >= 0) {
+    const e = t.indexOf(FX_END, b);
+    t = t.slice(0, b).replace(/\n+$/, "\n") + (e >= 0 ? t.slice(e + FX_END.length).replace(/^\n+/, "") : "");
+  }
+  const hub = fxHub(t);
+  const head = hub ? new RegExp(`^\\[effects\\.${reEscape(hub)}\\][ \\t]*$`, "m").exec(t) : null;
+  let fxRows = [];
+  if (head) {
+    const names = anims.filter((a) => FX_ICONS[a.fx] || fxFace(a)).map((a) => `as_fx_${a.id}`);
+    const from = head.index + head[0].length;
+    const next = t.slice(from).search(/^\[/m);
+    const until = next < 0 ? t.length : from + next;
+    let table = t.slice(from, until);
+    const w = /^with\s*=\s*\[([^\]\n]*)\][ \t]*$/m.exec(table);
+    const kept = w ? [...w[1].matchAll(/"([^"]*)"/g)].map((m) => m[1]).filter((n) => !n.startsWith("as_fx_")) : [];
+    const all = [...kept, ...names];
+    const line = all.length ? `with = [${all.map(tomlStr).join(", ")}]` : "";
+    if (w) table = line ? table.replace(w[0], line) : table.replace(new RegExp(`${reEscape(w[0])}\\r?\\n?`), "");
+    else if (line) table = `\n${line}${table}`;
+    t = t.slice(0, from) + table + t.slice(until);
+    fxRows = fxToml(anims, previewId);
+  }
+  if (!head && b < 0 && !anims.some((a) => a.base)) return "";
+  const rows = [...baseToml(anims, t), ...fxRows];
+  if (rows.length) t = `${t.replace(/\n+$/, "\n")}\n${FX_BEGIN}\n${rows.join("\n")}\n${FX_END}\n`;
+  return t;
+}
+
+// Write the block into the own pack of every character wearing the studio (a pack two of them share
+// gets it once), with the files it names: icons, and the clips of the animations put in it. The
+// first time a pack is touched, a copy of it is kept beside it.
+function writeBaseFx(db, previewId) {
+  const anims = db.anims.filter((a) => a.enabled || a.id === previewId);
+  const files = new Set();
+  for (const c of listCharacters().list) {
+    if (!c.attached) continue;
+    const f = basePackFile(c.id);
+    if (f) files.add(f);
+  }
+  for (const f of files) {
+    try {
+      const text = import_node_fs.readFileSync(f, "utf8");
+      const next = withBaseFx(text, anims, previewId);
+      const root = import_node_path.dirname(f);
+      // her clips first, so the pack never names a file that is not there yet
+      const clipDir = import_node_path.join(root, ...BASE_DIR.split("/"));
+      const want = new Set([...(next || text).matchAll(new RegExp(`^file = "${reEscape(BASE_DIR)}/([^"]+)"`, "gm"))].map((m) => m[1]));
+      if (want.size) import_node_fs.mkdirSync(clipDir, { recursive: true });
+      for (const n of want) {
+        const src = import_node_path.join(CLIPS, n), dst = import_node_path.join(clipDir, n);
+        const s = import_node_fs.statSync(src);
+        const d = import_node_fs.existsSync(dst) ? import_node_fs.statSync(dst) : null;
+        if (!d || d.size !== s.size || d.mtimeMs < s.mtimeMs) import_node_fs.copyFileSync(src, dst);
+      }
+      if (next && next !== text) {
+        const backup = `${f}.before-anim-studio`; // not *.toml: nothing should take it for a pack
+        if (!import_node_fs.existsSync(backup)) import_node_fs.copyFileSync(f, backup);
+        const dir = import_node_path.join(root, ...FX_DIR.split("/"));
+        const used = [...next.matchAll(new RegExp(`^file = "${reEscape(FX_DIR)}/(\\w+)\\.png"`, "gm"))].map((m) => m[1]);
+        if (used.length) import_node_fs.mkdirSync(dir, { recursive: true });
+        for (const n of used) {
+          const png = import_node_path.join(dir, `${n}.png`);
+          if (!import_node_fs.existsSync(png)) import_node_fs.writeFileSync(png, Buffer.from(FX_SPRITES[n], "base64"));
+        }
+        import_node_fs.writeFileSync(f, next);
+      }
+      // clips of animations no longer in the pack go (only from the studio's own folder)
+      if (import_node_fs.existsSync(clipDir)) {
+        for (const n of import_node_fs.readdirSync(clipDir)) if (!want.has(n)) import_node_fs.rmSync(import_node_path.join(clipDir, n), { force: true });
+      }
+    } catch {
+      // the pack stays as it was: these are not worth breaking her own pack for
+    }
+  }
 }
 
 // The first clip of the idle of the pack the worn character plays — "" when it is built in or unreadable.
@@ -1116,11 +1383,15 @@ async function timeTick() {
   const db = loadDb();
   const now = currentPeriod();
   const was = packPeriod();
-  if (was === now || !timeMatters(db, was, now)) return;
+  const outfit = await outfitWanted(db, now).catch(() => "");
+  const packChange = was !== now && timeMatters(db, was, now);
+  if (!packChange && !outfit) return;
   const worn = listCharacters().list.some((c) => c.active && c.attached);
-  if (worn && activity.seen && activity.idleSec < TIME_SWITCH_IDLE_SEC) return;
+  if ((worn || outfit) && activity.seen && activity.idleSec < TIME_SWITCH_IDLE_SEC) return;
   await withAvatar(async () => {
-    if (!worn) return writePack(db);
+    if (outfit) wearOutfit(db, outfit);
+    const onNow = listCharacters().list.some((c) => c.active && c.attached);
+    if (!onNow && !outfit) return writePack(db);
     writePack(db, undefined, ownIdleClip());
     try {
       await restartAvatar();
@@ -1128,6 +1399,79 @@ async function timeTick() {
       writePack(db);
     }
   });
+}
+
+// ── outfit: another character (her other outfits) by the part of the day and the weather ──
+// Weather comes from Open-Meteo (free, no key): only the coordinates of the place are sent. The place
+// is Astra's own weather location when one is set, else the city typed on the page.
+var WEATHER_EVERY_MS = 20 * 60000;
+var weather = { at: 0, kind: "", key: "" };
+
+function weatherKind(code) {
+  if (code >= 95) return "storm";
+  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return "snow";
+  if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) return "rain";
+  if (code <= 1) return "clear";
+  return "cloud"; // 2-3 cloudy, 45/48 fog
+}
+
+function weatherPlace(db) {
+  try {
+    const g = JSON.parse(import_node_fs.readFileSync(import_node_path.join(CFG, "settings.json"), "utf8")).general || {};
+    if (g.weather_location_lat || g.weather_location_lon) return { name: g.weather_location_name || "Astra", lat: g.weather_location_lat, lon: g.weather_location_lon, fromAstra: true };
+  } catch {}
+  return db.outfit.place;
+}
+
+async function weatherNow(db) {
+  const place = weatherPlace(db);
+  if (!place) return "";
+  const key = `${place.lat},${place.lon}`;
+  if (weather.key === key && Date.now() - weather.at < WEATHER_EVERY_MS) return weather.kind;
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${Number(place.lat).toFixed(3)}&longitude=${Number(place.lon).toFixed(3)}&current=weather_code`;
+  const r = await fetch(url, { signal: AbortSignal.timeout(10000) });
+  const code = (await r.json())?.current?.weather_code;
+  weather = { at: Date.now(), kind: Number.isFinite(code) ? weatherKind(code) : "", key };
+  return weather.kind;
+}
+
+// the character the rules ask for now, when that differs from what they asked for last time; else ""
+async function outfitWanted(db, period) {
+  const o = db.outfit;
+  if (!o.on) return "";
+  const kind = Object.values(o.weather).some(Boolean) ? await weatherNow(db).catch(() => "") : "";
+  const want = (kind && o.weather[kind]) || o.time[period] || "";
+  if (!want || want === o.last) return "";
+  if (want === activeCharacter()) {
+    o.last = want;
+    saveDb(db);
+    return "";
+  }
+  return listCharacters().list.some((c) => c.id === want) ? want : "";
+}
+
+// companion.toml `[pet] character = "…"` — the one place the worn character is written
+function wearOutfit(db, id) {
+  const file = import_node_path.join(PACK_ROOT, "companion.toml");
+  const text = import_node_fs.readFileSync(file, "utf8");
+  const before = activeCharacter();
+  if (!/^\s*character\s*=\s*"[^"]*"/m.test(text)) throw new Error("companion.toml has no `character =` line");
+  if (!import_node_fs.existsSync(file + ".before-anim-studio")) import_node_fs.copyFileSync(file, file + ".before-anim-studio");
+  import_node_fs.writeFileSync(file, text.replace(/^(\s*character\s*=\s*)"[^"]*"/m, `$1${tomlStr(id)}`));
+  // the studio's animations go with her to the new outfit when the old one wore them
+  const chars = listCharacters().list;
+  if (chars.find((c) => c.id === before)?.attached && !chars.find((c) => c.id === id)?.attached) setAttached(id, true);
+  db.outfit.last = id;
+  saveDb(db);
+}
+
+// a city typed on the page → its coordinates (Open-Meteo geocoding)
+async function findPlace(name) {
+  const lang = /[а-яё]/i.test(name) ? "ru" : "en";
+  const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=1&language=${lang}`;
+  const hit = (await (await fetch(url, { signal: AbortSignal.timeout(10000) })).json())?.results?.[0];
+  if (!hit) throw new Error("not found");
+  return { name: [hit.name, hit.country].filter(Boolean).join(", "), lat: hit.latitude, lon: hit.longitude };
 }
 
 // ── life: behaviour by the time of day (moved here from Dota Coach) ─────────
@@ -1164,7 +1508,8 @@ async function lifeReact(ctx, cfg, phrase, state) {
   if (!state || working) return;
   // Astra's commands cue only the states of her own pack; a studio animation is shown the way Show does
   // it — a quick restart with it in place of her greeting (not awaited: the watcher must not stall)
-  if (state.startsWith("as_")) showInsteadOfGreeting(state.slice(3)).catch(() => {});
+  const inPack = loadDb().anims.some((a) => "as_" + a.id === state && a.base && a.enabled);
+  if (state.startsWith("as_") && !inPack) showInsteadOfGreeting(state.slice(3)).catch(() => {});
   else await ctx.fireTrigger("anim_play", { state }).catch(() => {});
 }
 
@@ -1350,7 +1695,8 @@ function getState(ctx) {
   const db = loadDb();
   return {
     anims: db.anims, reroll: db.reroll || [20, 35], life: db.life, characters: listCharacters(), folder: STUDIO,
-    period: currentPeriod(), periodHours: PERIOD_HOURS, commands: commandsStatus(ctx)
+    period: currentPeriod(), periodHours: PERIOD_HOURS, commands: commandsStatus(ctx), outfit: db.outfit,
+    fxIcons: Object.keys(FX_ICONS), fxHub: fxHub(), basePack: !!basePackFile()
   };
 }
 
@@ -1362,7 +1708,7 @@ export const app = plugin({
       input: s.object({}),
       run: async () => JSON.stringify(loadDb().anims.map((a) => ({
         title: a.title, state: "as_" + a.id, enabled: a.enabled, when_bored: a.idle?.on ? a.idle.weight : false,
-        music: BANDS.filter((b) => a.music?.[b]), time_of_day: cleanTimes(a.times) || "any"
+        music: BANDS.filter((b) => a.music?.[b]), time_of_day: cleanTimes(a.times) || "any", in_character_pack: !!a.base
       })))
     })
   },
@@ -1397,8 +1743,10 @@ export const app = plugin({
         const before = JSON.stringify([a.inplace, a.expr, a.exprWeight, a.fingers]);
         const patch = p.patch || {};
         for (const k of ["title", "enabled", "speed", "inplace"]) if (k in patch) a[k] = patch[k];
+        if ("base" in patch) a.base = !!patch.base;
         if ("times" in patch) a.times = cleanTimes(patch.times);
         if ("expr" in patch) a.expr = EXPRESSIONS.includes(patch.expr) ? patch.expr : undefined;
+        if ("fx" in patch) a.fx = FX_ICONS[patch.fx] ? patch.fx : undefined;
         if ("exprWeight" in patch) a.exprWeight = Math.max(0.1, Math.min(1, Number(patch.exprWeight) || 1));
         if ("fingers" in patch) a.fingers = Math.max(0, Math.min(60, Number(patch.fingers) || 0));
         if (patch.idle) a.idle = { ...a.idle, ...patch.idle };
@@ -1436,6 +1784,27 @@ export const app = plugin({
       setCharacter: async (p) => {
         setAttached(String(p.id), !!p.on);
         return listCharacters();
+      },
+      setOutfit: async (p) => {
+        const db = loadDb();
+        const patch = p.patch || {};
+        const ids = new Set(listCharacters().list.map((c) => c.id));
+        const pick = (v) => (ids.has(String(v)) ? String(v) : "");
+        if ("on" in patch) db.outfit.on = !!patch.on;
+        for (const k of Object.keys(OUTFIT_DEFAULTS.time)) if (patch.time && k in patch.time) db.outfit.time[k] = pick(patch.time[k]);
+        for (const k of Object.keys(OUTFIT_DEFAULTS.weather)) if (patch.weather && k in patch.weather) db.outfit.weather[k] = pick(patch.weather[k]);
+        if (patch.city !== undefined) {
+          db.outfit.place = String(patch.city).trim() ? await findPlace(String(patch.city).trim().slice(0, 80)) : null;
+          weather = { at: 0, kind: "", key: "" };
+        }
+        db.outfit.last = ""; // a new rule applies at the next check
+        saveDb(db);
+        return db.outfit;
+      },
+      outfitWeather: async () => {
+        const db = loadDb();
+        const place = weatherPlace(db);
+        return { place, kind: place ? await weatherNow(db).catch(() => "") : "" };
       },
       setLife: async (p) => {
         const db = loadDb();
@@ -1506,5 +1875,5 @@ export const app = plugin({
   healthCheck: () => ({ healthy: true, status: "ok" })
 });
 // for test/*.test.mjs
-export const internals = { buildToml, periodOf, timeMatters, fbxToVrma, vrmaEdit, vrmaInfo, readGlb, readAccessor, LIFE_PHRASES };
+export const internals = { buildToml, fxToml, withBaseFx, periodOf, timeMatters, fbxToVrma, vrmaEdit, vrmaInfo, readGlb, readAccessor, LIFE_PHRASES, modelAliases, weatherKind };
 if (require.main === module) app.run();

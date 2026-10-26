@@ -52,9 +52,17 @@ h1 span{background:linear-gradient(90deg,var(--accent),var(--accent2));-webkit-b
 .char{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:12px;background:var(--raised);border:1px solid var(--line);cursor:pointer;user-select:none}
 .char.on{border-color:var(--accent);background:var(--accent-soft)}
 .char small{color:var(--muted)}
-.anim{display:grid;grid-template-columns:1fr auto;gap:10px 16px;padding:14px 0;border-top:1px solid var(--line)}
+.anim{border-top:1px solid var(--line)}
 .anim:first-of-type{border-top:0}
-.anim.off{opacity:.55}
+.anim.off .anim-head{opacity:.55}
+.anim-head{display:flex;align-items:center;gap:12px;padding:12px 8px;margin:0 -8px;border-radius:12px;cursor:pointer;user-select:none}
+.anim-head:hover{background:var(--hover)}
+.anim.open .anim-head{background:var(--accent-soft)}
+.caret{color:var(--muted);width:12px;flex:none}
+.anim-name{flex:1;min-width:0}
+.anim-name .name{font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.anim-name .meta{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.anim-body{display:flex;flex-direction:column;gap:12px;padding:12px 4px 16px 24px}
 .title{background:transparent;border:1px solid transparent;color:var(--text);font-size:15px;font-weight:700;padding:3px 6px;border-radius:8px;margin-left:-6px;width:min(420px,100%)}
 .title:hover,.title:focus{border-color:var(--line);outline:none;background:var(--raised)}
 .meta{color:var(--muted);font-size:12px;margin-top:2px}
@@ -67,6 +75,7 @@ h1 span{background:linear-gradient(90deg,var(--accent),var(--accent2));-webkit-b
 .switch::after{content:"";position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;background:var(--knob);transition:.15s}
 .switch.on{background:var(--color-toggle-on,var(--accent))}
 .switch.on::after{left:19px;background:#fff}
+.switch.disabled{opacity:.4;cursor:not-allowed}
 input[type=range]{accent-color:var(--accent);width:120px}
 .empty{text-align:center;color:var(--muted);padding:34px 10px}
 .modal-bg{position:fixed;inset:0;background:var(--backdrop);display:flex;align-items:center;justify-content:center;z-index:50}

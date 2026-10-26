@@ -25,8 +25,20 @@ const I18N = {
     times: "Время", morning: "утро", day: "день", evening: "вечер", night: "ночь", anyTime: "в любое время",
     impTimes: "Когда играть (от скуки и под музыку)", lastTime: "Хотя бы одна часть суток должна остаться",
     timesHint: "утро 5–12 · день 12–18 · вечер 18–24 · ночь 0–5. Когда наступает другая часть суток, аватар перезапускается сам — как только ты минуту не трогаешь компьютер.",
-    now: "сейчас",
+    outfit: "Наряд", outfitOn: "Менять наряд по времени суток и погоде",
+    outfitHint: "Выбери, какой из её вариантов (персонажей) надевать. Погода важнее времени. Если переоденешь её сам, твой выбор остаётся до следующей смены времени суток или погоды.",
+    outfitByTime: "По времени суток", outfitByWeather: "По погоде", outfitKeep: "— не менять —",
+    outfitCity: "Город для погоды", outfitFind: "Найти", outfitFromAstra: "из настроек Astra", outfitNow: "сейчас", outfitNotFound: "Такой город не найден.",
+    outfitRestart: "Переодевание — это перезапуск аватара: он ждёт, пока ты минуту не трогаешь компьютер. Погода — Open-Meteo, туда уходят только координаты города.",
+    wx_clear: "ясно", wx_cloud: "облачно", wx_rain: "дождь", wx_snow: "снег", wx_storm: "гроза",
+    now: "сейчас", faceKeys: "по ключам редактора", faceKeysClear: "Сбросить ключи", expand: "Открыть настройки", collapse: "Свернуть",
     edit: "✎ Редактор", face: "Мимика", faceNone: "нет", happy: "радость", angry: "злость", sad: "грусть", relaxed: "спокойствие", surprised: "удивление",
+    inPack: "В набор персонажа", inPackShort: "в наборе персонажа",
+    inPackHint: "Анимация станет обычным состоянием её собственного набора: появится в Astra → Модель → Анимации, её можно повесить на триггеры и команды Astra, и она запускается сразу, без перезапуска аватара. Лицо и значок тоже работают. После включения нажми «Применить».",
+    inPackNone: "У надетого персонажа встроенный набор — в него ничего не добавить. Сделай копию персонажа (Модель → Персонажи).",
+    fxLbl: "Значок", fxNone: "нет", fx_hearts: "💕 сердечки", fx_sparkle: "✨ искорки", fx_sweat: "💧 капля пота", fx_zzz: "💤 Z z z", fx_question: "❓ вопросики", fx_tears: "😢 слёзки", fx_notes: "🎵 ноты", fx_anger: "💢 злость",
+    fxHint: "Лицо и значок над головой видны, когда анимация играет сама: «▶ Показать», поведение по времени суток, реакции на события. В случайных движениях от скуки и в танцах движок не различает, какой клип играет, — там их нет.",
+    fxNoHub: "Набор этого персонажа не даёт подключить лицо и значок: в нём нет эффекта [interactions.none].",
     fingersLbl: "Пальцы", fingersStraight: "как в анимации", fingersHint: "Насколько согнуть пальцы к ладони поверх анимации — у Mixamo они часто прямые, как доска.",
     impFace: "Мимика лица (FBX станет VRMA)", impFingers: "Расслабить пальцы",
     life: "Время суток", lifeOn: "Поведение по времени суток", lifeVoice: "Говорить фразы",
@@ -72,8 +84,20 @@ const I18N = {
     times: "Time", morning: "morning", day: "day", evening: "evening", night: "night", anyTime: "any time",
     impTimes: "When to play it (when bored and to music)", lastTime: "At least one part of the day has to stay",
     timesHint: "morning 5–12 · day 12–18 · evening 18–24 · night 0–5. When another part of the day begins the avatar restarts by itself — once you leave the computer alone for a minute.",
-    now: "now",
+    outfit: "Outfit", outfitOn: "Change her outfit by the time of day and the weather",
+    outfitHint: "Pick which of her versions (characters) to wear. The weather wins over the time. If you change her yourself, your pick stays until the next part of the day or weather.",
+    outfitByTime: "By the time of day", outfitByWeather: "By the weather", outfitKeep: "— keep —",
+    outfitCity: "City for the weather", outfitFind: "Find", outfitFromAstra: "from Astra's settings", outfitNow: "now", outfitNotFound: "No such city found.",
+    outfitRestart: "Changing her outfit restarts the avatar: it waits until you leave the computer alone for a minute. Weather is Open-Meteo; only the city's coordinates are sent.",
+    wx_clear: "clear", wx_cloud: "cloudy", wx_rain: "rain", wx_snow: "snow", wx_storm: "storm",
+    now: "now", faceKeys: "by the editor’s keys", faceKeysClear: "Clear the keys", expand: "Open the settings", collapse: "Collapse",
     edit: "✎ Editor", face: "Face", faceNone: "none", happy: "happy", angry: "angry", sad: "sad", relaxed: "relaxed", surprised: "surprised",
+    inPack: "Into the character's pack", inPackShort: "in the character's pack",
+    inPackHint: "The animation becomes an ordinary state of her own pack: it shows in Astra → Model → Animations, Astra's triggers and commands can play it, and it starts at once, with no avatar restart. The face and the icon work too. Click “Apply” after turning it on.",
+    inPackNone: "The character worn now has a built-in pack — nothing can be added to it. Make a copy of the character (Model → Characters).",
+    fxLbl: "Icon", fxNone: "none", fx_hearts: "💕 hearts", fx_sparkle: "✨ sparkles", fx_sweat: "💧 sweat drop", fx_zzz: "💤 Z z z", fx_question: "❓ question marks", fx_tears: "😢 tears", fx_notes: "🎵 notes", fx_anger: "💢 anger",
+    fxHint: "The face and the icon over her head show while the animation plays as itself: “▶ Show”, behaviour by the time of day, reactions to events. Among the random idle moves and the dances the engine can't tell which clip plays, so they don't show there.",
+    fxNoHub: "This character's pack has no [interactions.none] effect to attach a face and an icon to.",
     fingersLbl: "Fingers", fingersStraight: "as animated", fingersHint: "How far the fingers bend towards the palm on top of the animation — Mixamo often leaves them straight as a board.",
     impFace: "Face expression (an FBX becomes a VRMA)", impFingers: "Relax the fingers",
     life: "Time of day", lifeOn: "Behaviour by the time of day", lifeVoice: "Say phrases",
@@ -128,6 +152,10 @@ const sliderToWeight = (v) => Math.round(0.01 * Math.pow(100, v / 100) * 1000) /
 async function refresh() {
   st = await call("getState");
   render();
+  if (st.outfit?.on && !wx) {
+    wx = { place: null, kind: "" };
+    call("outfitWeather").then((w) => { wx = w; render(); }).catch(() => {});
+  }
 }
 
 function render() {
@@ -159,6 +187,7 @@ function render() {
     ${st.anims.length ? st.anims.map(animRow).join("") : `<div class="empty">${T("none")}</div>`}
   </div>
   ${lifeCard()}
+  ${outfitCard()}
   <div class="card">
     <h2>${T("settings")}</h2>
     <div class="row">${T("reroll")}
@@ -169,40 +198,147 @@ function render() {
   <div class="card"><details><summary>${T("help")}</summary>${T("helpBody")}</details></div>`;
 }
 
+// One open at a time: a click on an animation's header opens its settings under it, a second closes them.
+let openAnim = (() => {
+  try { return localStorage.getItem("as-open") || null; } catch { return null; }
+})();
+function toggleAnim(id) {
+  openAnim = openAnim === id ? null : id;
+  try { localStorage.setItem("as-open", openAnim || ""); } catch {}
+  render();
+}
+
+// what the closed header says about when she plays it
+function animSummary(a) {
+  const parts = [];
+  if (a.base) parts.push(T("inPackShort"));
+  if (a.idle?.on) parts.push(T("bored"));
+  const bands = ["slow", "mid", "fast"].filter((b) => a.music?.[b]);
+  if (bands.length) parts.push(`${T("music")}: ${bands.map((b) => T(b)).join(", ")}`);
+  const times = timesOf(a);
+  parts.push(times.length === PERIODS.length ? T("anyTime") : times.map((p) => T(p)).join(", "));
+  if (hasFaceKeys(a)) parts.push(T("faceKeys"));
+  else if (a.expr) parts.push(T(a.expr));
+  if (a.fx) parts.push(T("fx_" + a.fx));
+  return parts.join(" · ");
+}
+
+// face keys set in the editor take the place of the expression picked in the list
+const hasFaceKeys = (a) => Object.values(a.edit?.face || {}).some((k) => k?.length);
+async function clearFaceKeys(id) {
+  const a = st.anims.find((x) => x.id === id);
+  try {
+    await call("editorSave", { id, edit: { ...(a.edit || {}), face: {} } });
+    dirty = true;
+    banner = null;
+  } catch (e) {
+    banner = { cls: "err", text: e.message };
+  }
+  await refresh();
+}
+
 function animRow(a) {
   const w = a.idle?.weight ?? 0.15;
-  return `<div class="anim ${a.enabled ? "" : "off"}">
-    <div>
-      <input class="title" value="${esc(a.title)}" onchange="upd('${a.id}', {title: this.value})">
-      <div class="meta">${esc(a.kind.toUpperCase())}${a.source ? ` · ${esc(a.source)}` : ""} · ${a.duration || "?"} ${T("sec")} ·
-        ${T("state")} <code title="${esc(T("stateHint"))}" onclick="copyState('as_${a.id}')">as_${esc(a.id)}</code></div>
-    </div>
-    <div class="row">
-      <button class="btn primary" onclick="preview('${a.id}')" ${busy ? "disabled" : ""}>${previewing === a.id ? T("showing") : T("show")}</button>
-      ${a.kind === "glb" ? "" : `<button class="btn" onclick="openEditor('${a.id}')">${T("edit")}</button>`}
-      <div class="opt"><div class="switch ${a.enabled ? "on" : ""}" onclick="upd('${a.id}', {enabled: ${!a.enabled}})"></div>${T("enabled")}</div>
-      <button class="btn danger" onclick="del('${a.id}')">${T("del")}</button>
-    </div>
-    <div class="opts">
-      <div class="opt"><div class="switch ${a.idle?.on ? "on" : ""}" onclick="upd('${a.id}', {idle: {on: ${!a.idle?.on}}})"></div>${T("bored")}
-        ${a.idle?.on ? `<span class="muted">${T("rare")}</span><input type="range" min="0" max="100" value="${weightToSlider(w)}" onchange="upd('${a.id}', {idle: {weight: sliderToWeight(this.value)}})"><span class="muted">${T("often")}</span>` : ""}
+  const open = openAnim === a.id;
+  // a click on a control inside the header must not open or close the settings
+  const stop = "event.stopPropagation();";
+  return `<div class="anim ${a.enabled ? "" : "off"} ${open ? "open" : ""}">
+    <div class="anim-head" onclick="toggleAnim('${a.id}')" title="${esc(T(open ? "collapse" : "expand"))}">
+      <span class="caret">${open ? "▾" : "▸"}</span>
+      <div class="anim-name">
+        <div class="name">${esc(a.title)}</div>
+        <div class="meta">${esc(a.kind.toUpperCase())} · ${a.duration || "?"} ${T("sec")} · ${esc(animSummary(a))}</div>
       </div>
-      <div class="opt">${T("music")}:
-        ${["slow", "mid", "fast"].map((b) => `<span class="chip ${a.music?.[b] ? "on" : ""}" onclick="upd('${a.id}', {music: {${b}: ${!a.music?.[b]}}})">${T(b)}</span>`).join("")}
+      <div class="row" onclick="${stop}">
+        <button class="btn primary" onclick="preview('${a.id}')" ${busy ? "disabled" : ""}>${previewing === a.id ? T("showing") : T("show")}</button>
+        ${a.kind === "glb" ? "" : `<button class="btn" onclick="openEditor('${a.id}')">${T("edit")}</button>`}
+        <div class="switch ${a.enabled ? "on" : ""}" title="${esc(T("enabled"))}" onclick="upd('${a.id}', {enabled: ${!a.enabled}})"></div>
       </div>
-      <div class="opt" title="${esc(T("timesHint"))}">${T("times")}:
-        ${PERIODS.map((p) => `<span class="chip ${timesOf(a).includes(p) ? "on" : ""}" onclick="toggleTime('${a.id}', '${p}')">${T(p)}</span>`).join("")}
-      </div>
-      <div class="opt"><div class="switch ${a.inplace ? "on" : ""}" onclick="upd('${a.id}', {inplace: ${!a.inplace}})"></div>${T("inplace")}</div>
-      <div class="opt">${T("speed")} <input type="range" min="50" max="150" value="${Math.round((a.speed || 1) * 100)}" onchange="upd('${a.id}', {speed: this.value / 100})"><span class="muted">×${(a.speed || 1).toFixed(2)}</span></div>
-      ${a.kind === "glb" ? "" : `
-      <div class="opt">${T("face")}
-        <select class="text" style="width:auto" onchange="upd('${a.id}', {expr: this.value})">
-          ${["", ...EXPRESSIONS].map((e) => `<option value="${e}" ${(a.expr || "") === e ? "selected" : ""}>${e ? T(e) : T("faceNone")}</option>`).join("")}
-        </select></div>
-      <div class="opt" title="${esc(T("fingersHint"))}">${T("fingersLbl")} <input type="range" min="0" max="60" value="${a.fingers || 0}" onchange="upd('${a.id}', {fingers: Number(this.value)})"><span class="muted">${a.fingers ? `${a.fingers}°` : T("fingersStraight")}</span></div>`}
     </div>
+    ${open ? `<div class="anim-body">
+      <div class="opts">
+        <div class="opt">${T("impTitle")} <input class="text" style="width:260px" value="${esc(a.title)}" onchange="upd('${a.id}', {title: this.value})"></div>
+        <div class="opt muted">${T("state")} <code title="${esc(T("stateHint"))}" onclick="copyState('as_${a.id}')">as_${esc(a.id)}</code>${a.source ? ` · ${esc(a.source)}` : ""}</div>
+      </div>
+      <div class="opts">
+        <div class="opt"><div class="switch ${a.idle?.on ? "on" : ""}" onclick="upd('${a.id}', {idle: {on: ${!a.idle?.on}}})"></div>${T("bored")}
+          ${a.idle?.on ? `<span class="muted">${T("rare")}</span><input type="range" min="0" max="100" value="${weightToSlider(w)}" onchange="upd('${a.id}', {idle: {weight: sliderToWeight(this.value)}})"><span class="muted">${T("often")}</span>` : ""}
+        </div>
+        <div class="opt">${T("music")}:
+          ${["slow", "mid", "fast"].map((b) => `<span class="chip ${a.music?.[b] ? "on" : ""}" onclick="upd('${a.id}', {music: {${b}: ${!a.music?.[b]}}})">${T(b)}</span>`).join("")}
+        </div>
+        <div class="opt" title="${esc(T("timesHint"))}">${T("times")}:
+          ${PERIODS.map((p) => `<span class="chip ${timesOf(a).includes(p) ? "on" : ""}" onclick="toggleTime('${a.id}', '${p}')">${T(p)}</span>`).join("")}
+        </div>
+      </div>
+      <div class="opts">
+        <div class="opt"><div class="switch ${a.inplace ? "on" : ""}" onclick="upd('${a.id}', {inplace: ${!a.inplace}})"></div>${T("inplace")}</div>
+        <div class="opt" title="${esc(T(st.basePack ? "inPackHint" : "inPackNone"))}"><div class="switch ${a.base ? "on" : ""} ${st.basePack ? "" : "disabled"}" onclick="${st.basePack ? `upd('${a.id}', {base: ${!a.base}})` : ""}"></div>${T("inPack")}</div>
+        <div class="opt">${T("speed")} <input type="range" min="50" max="150" value="${Math.round((a.speed || 1) * 100)}" onchange="upd('${a.id}', {speed: this.value / 100})"><span class="muted">×${(a.speed || 1).toFixed(2)}</span></div>
+        ${a.kind === "glb" ? "" : `
+        <div class="opt">${T("face")}
+          ${hasFaceKeys(a) ? `<span class="muted">${T("faceKeys")}</span><button class="btn" onclick="clearFaceKeys('${a.id}')">${T("faceKeysClear")}</button>` : `
+          <select class="text" style="width:auto" onchange="upd('${a.id}', {expr: this.value})">
+            ${["", ...EXPRESSIONS].map((e) => `<option value="${e}" ${(a.expr || "") === e ? "selected" : ""}>${e ? T(e) : T("faceNone")}</option>`).join("")}
+          </select>`}</div>
+        <div class="opt" title="${esc(T(st.fxHub ? "fxHint" : "fxNoHub"))}">${T("fxLbl")}
+          <select class="text" style="width:auto" ${st.fxHub ? "" : "disabled"} onchange="upd('${a.id}', {fx: this.value})">
+            ${["", ...(st.fxIcons || [])].map((f) => `<option value="${f}" ${(a.fx || "") === f ? "selected" : ""}>${f ? T("fx_" + f) : T("fxNone")}</option>`).join("")}
+          </select></div>
+        <div class="opt" title="${esc(T("fingersHint"))}">${T("fingersLbl")} <input type="range" min="0" max="60" value="${a.fingers || 0}" onchange="upd('${a.id}', {fingers: Number(this.value)})"><span class="muted">${a.fingers ? `${a.fingers}°` : T("fingersStraight")}</span></div>`}
+      </div>
+      <div class="row" style="justify-content:flex-end">
+        <button class="btn" onclick="toggleAnim('${a.id}')">${T("collapse")}</button>
+        <button class="btn danger" onclick="del('${a.id}')">${T("del")}</button>
+      </div>
+    </div>` : ""}
   </div>`;
+}
+
+// ── outfit: which character (her outfits) by the part of the day and the weather ──
+let wx = null; // { place, kind } — asked for once per refresh while the rules are on
+function outfitCard() {
+  const o = st.outfit || { time: {}, weather: {} };
+  const chars = st.characters?.list || [];
+  const sel = (group, k) => `<select class="text" style="width:auto;min-width:190px" onchange="setOutfit({${group}: {${k}: this.value}})">
+      <option value="">${T("outfitKeep")}</option>
+      ${chars.map((c) => `<option value="${esc(c.id)}" ${o[group]?.[k] === c.id ? "selected" : ""}>${esc(c.name)}</option>`).join("")}
+    </select>`;
+  const row = (label, html) => `<div class="opt" style="justify-content:space-between;min-width:min(460px,100%)"><span>${label}</span>${html}</div>`;
+  const place = wx?.place;
+  return `<div class="card">
+    <h2>${T("outfit")}</h2>
+    <div class="muted" style="margin-bottom:10px">${T("outfitHint")}</div>
+    <div class="opts" style="margin-bottom:10px">
+      <div class="opt"><div class="switch ${o.on ? "on" : ""}" onclick="setOutfit({on: ${!o.on}})"></div>${T("outfitOn")}</div>
+    </div>
+    ${o.on ? `
+    <div style="display:grid;gap:8px;margin-bottom:12px">
+      <div class="muted">${T("outfitByTime")}</div>
+      ${PERIODS.map((p) => row(T(p), sel("time", p))).join("")}
+    </div>
+    <div style="display:grid;gap:8px">
+      <div class="muted">${T("outfitByWeather")}</div>
+      <div class="row">
+        ${place?.fromAstra ? `<span class="muted">${esc(place.name)} (${T("outfitFromAstra")})</span>` : `
+        <input class="text" id="outfitCity" style="width:220px" placeholder="${esc(T("outfitCity"))}" value="${esc(o.place?.name || "")}">
+        <button class="btn" onclick="setOutfit({city: document.getElementById('outfitCity').value})">${T("outfitFind")}</button>`}
+        ${place ? `<span class="muted">${T("outfitNow")}: ${wx?.kind ? T("wx_" + wx.kind) : "…"}</span>` : ""}
+      </div>
+      ${["clear", "cloud", "rain", "snow", "storm"].map((k) => row(T("wx_" + k), sel("weather", k))).join("")}
+    </div>
+    <div class="muted" style="margin-top:10px">${T("outfitRestart")}</div>` : ""}
+  </div>`;
+}
+async function setOutfit(patch) {
+  try {
+    await call("setOutfit", { patch });
+    banner = null;
+  } catch (e) {
+    banner = { cls: "err", text: patch.city !== undefined ? T("outfitNotFound") : e.message };
+  }
+  wx = null;
+  await refresh();
 }
 
 function lifeCard() {

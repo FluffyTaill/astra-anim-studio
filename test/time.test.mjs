@@ -110,6 +110,9 @@ test("a VRMA gets a face expression and bent fingers, the rest untouched", () =>
   assert.equal(out.json.nodes[face].name, "expr_happy");
   assert.ok(out.json.scenes[0].nodes.includes(face));
   assert.equal(vrmaEdit(src, {}), src); // nothing asked — the file stays as it is
+  // a model that keeps "surprised" as its own custom expression gets the track under that name too
+  const sur = readGlb(vrmaEdit(src, { expr: "surprised", aliases: { surprised: "Surprised" } })).json.extensions.VRMC_vrm_animation.expressions;
+  assert.equal(sur.preset.surprised.node, sur.custom.Surprised.node);
   // every key time goes strictly forward — Astra's engine drops a channel with two keys at one time
   for (const smp of anim.samplers) {
     const t = readAccessor(out.json, out.bin, smp.input);
@@ -151,6 +154,12 @@ test("the editor's mirror, bone offset and trim, in that order", () => {
   assert.equal(vrmaInfo(vrmaEdit(src, { trim: [1, 2] })).duration, 1);
 });
 
+test("weather codes (WMO) to the outfit's kinds of weather", () => {
+  const { weatherKind } = internals;
+  assert.deepEqual([0, 1, 2, 3, 45, 61, 81, 71, 86, 95, 99].map(weatherKind),
+    ["clear", "clear", "cloud", "cloud", "cloud", "rain", "rain", "snow", "snow", "storm", "storm"]);
+});
+
 test("a life reaction fires the phrase and the animation triggers", async () => {
   const h = await Harness.create(app).withLanguage("ru").start();
   await h.callFromUi("testLife", { phrase: "morning", state: "stretch" });
@@ -158,4 +167,97 @@ test("a life reaction fires the phrase and the animation triggers", async () => 
   assert.deepEqual(fired.map((f) => f.triggerType), ["anim_say", "anim_play"]);
   assert.ok(internals.LIFE_PHRASES.ru.morning.includes(fired[0].payload.text), fired[0].payload.text);
   assert.deepEqual(fired[1].payload, { state: "stretch" });
+});
+
+// the rows of one TOML table, up to the next table
+const table = (toml, name) => {
+  const at = toml.indexOf(`[${name}]\n`);
+  assert.ok(at >= 0, `no [${name}]`);
+  const rest = toml.slice(at + name.length + 3);
+  const end = rest.search(/^\[/m);
+  return end < 0 ? rest : rest.slice(0, end);
+};
+
+// a character's own pack, the way the studio finds it: [interactions.none] plays the hub effect
+const BASE = `[animpack]
+kind = "vrm"
+
+[effects.ambient]
+kind = "emit"
+prop = "heart"
+with = ["phone_texting", "face_laugh"]
+
+[effects.face_laugh]
+kind = "emit"
+prop = "heart"
+
+[interactions]
+default = "none"
+
+[interactions.none]
+clip = "ambient"
+`;
+
+test("a face and an icon go in a block of the character's own pack, on its hub", () => {
+  const { withBaseFx } = internals;
+  const anims = [anim("kiss", undefined, { fx: "hearts", expr: "happy", exprWeight: 0.8 }), anim("think", undefined, { fx: "question" }), anim("plain")];
+  const t = withBaseFx(BASE, anims);
+  assert.match(table(t, "effects.ambient"), /^with = \["phone_texting", "face_laugh", "as_fx_kiss", "as_fx_think"\]$/m);
+  assert.match(table(t, "effects.as_fx_kiss"), /pet_states = \["as_kiss"\]/);
+  assert.match(table(t, "effects.as_fx_kiss.face"), /preset = "happy"\nweight = 0.8/);
+  const emit = table(t, "effects.as_fx_kiss.emit");
+  assert.match(emit, /^burst = 3$/m); // counts are integers
+  assert.match(emit, /^rate = \[3.0, 4.0\]$/m); // and floats stay floats
+  assert.match(t, /file = "clips\/anim-studio-fx\/question.png"/);
+  assert.ok(t.startsWith(BASE.slice(0, BASE.indexOf("[effects.ambient]")))); // the rest of her pack is hers
+  // written again: the same text, not a second block
+  assert.equal(withBaseFx(t, anims), t);
+  // nothing chosen any more: the pack is back to what it was
+  assert.equal(withBaseFx(t, [anim("plain")]), BASE);
+  // no hub: nothing to hang them on
+  assert.equal(withBaseFx("[animpack]\nkind = \"vrm\"\n", anims), "");
+});
+
+test("a face with no icon still names a declared prop", () => {
+  const t = internals.withBaseFx(BASE, [anim("smile", undefined, { expr: "happy" })]);
+  assert.match(table(t, "effects.as_fx_smile"), /prop = "as_fx_heart"/);
+  assert.match(t, /name = "as_fx_heart"\nfile = "builtin:nayu-anims\/heart.png"/);
+  assert.ok(!t.includes("[effects.as_fx_smile.emit]"));
+});
+
+test("the editor's face keys give the effect its face: the strongest one", () => {
+  const t = internals.withBaseFx(BASE, [anim("dance", undefined, { expr: "happy", edit: { face: { angry: [[1, 0.4], [3, 0.9]], sad: [[2, 0.5]] } } })]);
+  assert.match(table(t, "effects.as_fx_dance.face"), /preset = "angry"\nweight = 0.9/);
+});
+
+test("shown instead of the greeting, its face and icon also show in `greet`; the add-on carries none", () => {
+  const anims = [anim("kiss", undefined, { fx: "hearts" })];
+  assert.match(table(internals.withBaseFx(BASE, anims, "kiss"), "effects.as_fx_kiss"), /pet_states = \["as_kiss", "greet"\]/);
+  const t = buildToml({ anims, reroll: [20, 35], life: {} }, "kiss", "day", "");
+  assert.match(table(t, "states.greet"), /clip = "as_kiss"/);
+  assert.ok(!t.includes("[effects."), "the engine takes effects from the base pack only");
+});
+
+test("“into the character's pack”: a clip and a state of her own pack, not of the add-on", () => {
+  const base = BASE.replace("[interactions]", "[states.idle]\nclip = \"idle\"\n\n[states.drag]\nclip = \"drag\"\n\n[interactions]");
+  const anims = [anim("wave", undefined, { base: true, clipFile: "wave.vrma", speed: 1.2 }), anim("plain")];
+  const t = internals.withBaseFx(base, anims);
+  assert.match(t, /name = "asb_wave"   # wave\nfile = "clips\/anim-studio\/wave.vrma"\nloop = false\nfade = 0.50\nspeed = 1.20/);
+  const st = table(t, "states.as_wave");
+  assert.match(st, /clip = "asb_wave"/);
+  assert.match(t, /\[\[states.as_wave.transitions\]\]\non = "clip_finished"\nto = "idle"/);
+  // her pack had no hub entry to change: only the block was added
+  assert.match(table(t, "effects.ambient"), /^with = \["phone_texting", "face_laugh"\]$/m);
+  // the add-on keeps the clip for its idle and dance variants, but not the state
+  const addon = buildToml({ anims, reroll: [20, 35], life: {} }, "", "day", "");
+  assert.match(addon, /name = "as_wave"/);
+  assert.ok(!addon.includes("[states.as_wave]"));
+  assert.ok(addon.includes("[states.as_plain]"));
+  // a pack with no hub still takes the animation; a pack missing `drag` gets no edge to it
+  const bare = "[animpack]\nkind = \"vrm\"\n\n[states.idle]\nclip = \"idle\"\n";
+  const t2 = internals.withBaseFx(bare, anims);
+  assert.match(table(t2, "states.as_wave"), /clip = "asb_wave"/);
+  assert.ok(!t2.includes('to = "drag"'));
+  // taken out again: back to what it was
+  assert.equal(internals.withBaseFx(t2, [anim("wave")]), bare);
 });
