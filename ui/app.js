@@ -36,6 +36,8 @@ const I18N = {
     inPack: "В набор персонажа", inPackShort: "в наборе персонажа",
     inPackHint: "Анимация станет обычным состоянием её собственного набора: появится в Astra → Модель → Анимации, её можно повесить на триггеры и команды Astra, и она запускается сразу, без перезапуска аватара. Лицо и значок тоже работают. После включения нажми «Применить».",
     inPackNone: "У надетого персонажа встроенный набор — в него ничего не добавить. Сделай копию персонажа (Модель → Персонажи).",
+    smooth: "Плавные танцы",
+    smoothHint: "Танцы сменяют друг друга плавно, без стойки ожидания между ними: из танцевальных состояний набора убираются «вход» и «выход» (dance_in / dance_out) и бесконечный танец под темп, добавляются плавный переход и смена танца по интервалу ниже. Свой набор персонажа правится обратимо — выключи, и он станет как был. После изменения нажми «Применить».",
     fxLbl: "Значок", fxNone: "нет", fx_hearts: "💕 сердечки", fx_sparkle: "✨ искорки", fx_sweat: "💧 капля пота", fx_zzz: "💤 Z z z", fx_question: "❓ вопросики", fx_tears: "😢 слёзки", fx_notes: "🎵 ноты", fx_anger: "💢 злость",
     fxHint: "Лицо и значок над головой видны, когда анимация играет сама: «▶ Показать», поведение по времени суток, реакции на события. В случайных движениях от скуки и в танцах движок не различает, какой клип играет, — там их нет.",
     fxNoHub: "Набор этого персонажа не даёт подключить лицо и значок: в нём нет эффекта [interactions.none].",
@@ -95,6 +97,8 @@ const I18N = {
     inPack: "Into the character's pack", inPackShort: "in the character's pack",
     inPackHint: "The animation becomes an ordinary state of her own pack: it shows in Astra → Model → Animations, Astra's triggers and commands can play it, and it starts at once, with no avatar restart. The face and the icon work too. Click “Apply” after turning it on.",
     inPackNone: "The character worn now has a built-in pack — nothing can be added to it. Make a copy of the character (Model → Characters).",
+    smooth: "Smooth dances",
+    smoothHint: "Dances flow into each other with no idle stance between them: the intro and outro (dance_in / dance_out) and the endless tempo-paced dance are taken out of the pack's dance states, and a crossfade and the switch interval below are added. Her own pack is edited reversibly — turn it off and it is as it was. Click “Apply” after changing it.",
     fxLbl: "Icon", fxNone: "none", fx_hearts: "💕 hearts", fx_sparkle: "✨ sparkles", fx_sweat: "💧 sweat drop", fx_zzz: "💤 Z z z", fx_question: "❓ question marks", fx_tears: "😢 tears", fx_notes: "🎵 notes", fx_anger: "💢 anger",
     fxHint: "The face and the icon over her head show while the animation plays as itself: “▶ Show”, behaviour by the time of day, reactions to events. Among the random idle moves and the dances the engine can't tell which clip plays, so they don't show there.",
     fxNoHub: "This character's pack has no [interactions.none] effect to attach a face and an icon to.",
@@ -190,6 +194,9 @@ function render() {
   ${outfitCard()}
   <div class="card">
     <h2>${T("settings")}</h2>
+    <div class="opts" style="margin-bottom:10px">
+      <div class="opt" title="${esc(T("smoothHint"))}"><div class="switch ${st.smoothDance !== false ? "on" : ""}" onclick="setSmooth(${st.smoothDance === false})"></div>${T("smooth")}</div>
+    </div>
     <div class="row">${T("reroll")}
       <input class="text" style="width:70px" type="number" min="5" value="${st.reroll[0]}" onchange="setReroll(this.value, null)"> ${T("to")}
       <input class="text" style="width:70px" type="number" min="6" value="${st.reroll[1]}" onchange="setReroll(null, this.value)"> ${T("sec")}
@@ -464,6 +471,12 @@ async function del(id) {
 }
 async function setChar(id, on) {
   await call("setCharacter", { id, on });
+  dirty = true;
+  banner = null;
+  await refresh();
+}
+async function setSmooth(on) {
+  await call("setSmooth", { on });
   dirty = true;
   banner = null;
   await refresh();

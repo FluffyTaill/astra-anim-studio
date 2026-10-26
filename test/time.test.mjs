@@ -261,3 +261,52 @@ test("“into the character's pack”: a clip and a state of her own pack, not o
   // taken out again: back to what it was
   assert.equal(internals.withBaseFx(t2, [anim("wave")]), bare);
 });
+
+// a dance state the way the built-in pack writes it: an intro and an outro, and a bpm-paced loop
+const DANCE = `[states.dance_mid]
+start = "dance_in"
+end   = "dance_out"
+pick = "random"
+[[states.dance_mid.variants]]
+loop  = false
+blend = { param = "bpm", rate = "match", points = [{ clip = "dance_loop", at = 150.0 }] }
+[[states.dance_mid.variants]]
+clip = "twirl"
+[[states.dance_mid.transitions]]
+on = "music_stop"
+to = "idle"
+
+[states.idle]
+start = "keep_me"
+`;
+
+test("smooth dances: no intro/outro, no endless blend, a fade and a switch interval — and back again", () => {
+  const t = internals.smoothDanceText(DANCE, true, [20, 35]);
+  const st = table(t, "states.dance_mid");
+  assert.match(st, /^reroll_secs = \[20, 35\]/m);
+  assert.match(st, /^fade = 0.9/m);
+  assert.match(st, /^# anim-studio smooth: start = "dance_in"$/m);
+  assert.match(t, /^# anim-studio smooth: blend = /m);
+  assert.match(t, /^clip = "twirl"$/m); // an ordinary variant stays
+  assert.match(t, /^on = "music_stop"$/m); // and so do the edges
+  assert.match(t, /\[states.idle\]\nstart = "keep_me"/); // other states are not touched
+  assert.equal(internals.smoothDanceText(t, true, [20, 35]), t); // smoothing twice changes nothing
+  assert.equal(internals.smoothDanceText(t, false), DANCE); // off: exactly as it was
+  // line endings are the pack's own
+  const crlf = DANCE.replace(/\n/g, "\r\n");
+  assert.equal(internals.smoothDanceText(internals.smoothDanceText(crlf, true), false), crlf);
+});
+
+test("smooth dances on a built-in pack: the add-on replaces the bands that have studio dances", () => {
+  const db = { anims: [anim("samba"), anim("waltz", undefined, { music: { slow: true } })], reroll: [20, 35], life: {} };
+  const t = buildToml(db, "", "day", "", false);
+  const mid = table(t, "states.dance_mid");
+  assert.match(mid, /merge = "replace"/);
+  assert.match(mid, /fade = 0.9/);
+  assert.ok(!t.includes('to = "air"') && !t.includes('to = "move"')); // only states the add-on declares
+  assert.match(t, /\[\[states.dance_mid.transitions\]\]\non = "music_slow"\nto = "dance_slow"/);
+  assert.ok(!t.includes("[states.dance_fast]")); // no studio dances there: the pack's own stays
+  // with her own pack (smoothed in place) or the option off: the add-on only extends
+  assert.match(table(buildToml(db, "", "day", "", true), "states.dance_mid"), /merge = "extend"/);
+  assert.match(table(buildToml({ ...db, smoothDance: false }, "", "day", "", false), "states.dance_mid"), /merge = "extend"/);
+});
