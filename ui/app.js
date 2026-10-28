@@ -35,7 +35,9 @@ const I18N = {
     edit: "✎ Редактор", face: "Мимика", faceNone: "нет", happy: "радость", angry: "злость", sad: "грусть", relaxed: "спокойствие", surprised: "удивление",
     inPack: "В набор персонажа", inPackShort: "в наборе персонажа",
     inPackHint: "Анимация станет обычным состоянием её собственного набора: появится в Astra → Модель → Анимации, её можно повесить на триггеры и команды Astra, и она запускается сразу, без перезапуска аватара. Лицо и значок тоже работают. После включения нажми «Применить».",
-    inPackNone: "У надетого персонажа встроенный набор — в него ничего не добавить. Сделай копию персонажа (Модель → Персонажи).",
+    inPackNone: "У надетого персонажа встроенный набор анимаций — в него ничего не добавить. Нажми «Сделать свой набор» над списком анимаций.",
+    ownPackNeed: "У надетого персонажа встроенный набор анимаций Astra — в него нельзя добавить анимации, поэтому «В набор персонажа» серый (копия персонажа тоже берёт встроенный). Плагин может сделать ему свой набор: те же анимации, но в него можно добавлять свои.",
+    ownPackBtn: "Сделать свой набор", ownPackDone: (n) => `Готово: у персонажа «${n}» свой набор. Нажми «Применить» — аватар перезапустится с ним.`,
     smooth: "Плавные танцы",
     smoothHint: "Танцы сменяют друг друга плавно, без стойки ожидания между ними: из танцевальных состояний набора убираются «вход» и «выход» (dance_in / dance_out) и бесконечный танец под темп, добавляются плавный переход и смена танца по интервалу ниже. Свой набор персонажа правится обратимо — выключи, и он станет как был. После изменения нажми «Применить».",
     fxLbl: "Значок", fxNone: "нет", fx_hearts: "💕 сердечки", fx_sparkle: "✨ искорки", fx_sweat: "💧 капля пота", fx_zzz: "💤 Z z z", fx_question: "❓ вопросики", fx_tears: "😢 слёзки", fx_notes: "🎵 ноты", fx_anger: "💢 злость",
@@ -96,7 +98,9 @@ const I18N = {
     edit: "✎ Editor", face: "Face", faceNone: "none", happy: "happy", angry: "angry", sad: "sad", relaxed: "relaxed", surprised: "surprised",
     inPack: "Into the character's pack", inPackShort: "in the character's pack",
     inPackHint: "The animation becomes an ordinary state of her own pack: it shows in Astra → Model → Animations, Astra's triggers and commands can play it, and it starts at once, with no avatar restart. The face and the icon work too. Click “Apply” after turning it on.",
-    inPackNone: "The character worn now has a built-in pack — nothing can be added to it. Make a copy of the character (Model → Characters).",
+    inPackNone: "The character worn now has a built-in animation pack — nothing can be added to it. Press \"Make its own pack\" above the animations.",
+    ownPackNeed: "The character worn now plays Astra's built-in animation pack — nothing can be added to it, so \"Into the character's pack\" is grey (a copy of the character uses the built-in one too). The plugin can make it a pack of its own: the same animations, and yours can be added.",
+    ownPackBtn: "Make its own pack", ownPackDone: (n) => `Done: "${n}" has a pack of its own. Press Apply — the avatar restarts with it.`,
     smooth: "Smooth dances",
     smoothHint: "Dances flow into each other with no idle stance between them: the intro and outro (dance_in / dance_out) and the endless tempo-paced dance are taken out of the pack's dance states, and a crossfade and the switch interval below are added. Her own pack is edited reversibly — turn it off and it is as it was. Click “Apply” after changing it.",
     fxLbl: "Icon", fxNone: "none", fx_hearts: "💕 hearts", fx_sparkle: "✨ sparkles", fx_sweat: "💧 sweat drop", fx_zzz: "💤 Z z z", fx_question: "❓ question marks", fx_tears: "😢 tears", fx_notes: "🎵 notes", fx_anger: "💢 anger",
@@ -188,6 +192,7 @@ function render() {
   </div>
   <div class="card">
     <h2>${T("anims")}</h2>
+    ${st.ownPackable ? `<div class="notice">${T("ownPackNeed")} <button class="btn primary" style="margin-left:8px" onclick="makeOwnPack()" ${busy ? "disabled" : ""}>${T("ownPackBtn")}</button></div>` : ""}
     ${st.anims.length ? st.anims.map(animRow).join("") : `<div class="empty">${T("none")}</div>`}
   </div>
   ${lifeCard()}
@@ -394,6 +399,16 @@ async function setLife(patch) {
 }
 async function testLife(phrase, k) {
   await call("testLife", { phrase, state: st.life?.[k] || "" });
+}
+async function makeOwnPack() {
+  try {
+    const r = await call("makeOwnPack");
+    banner = { cls: "ok", text: T("ownPackDone")(r.name) };
+    dirty = true;
+  } catch (e) {
+    banner = { cls: "err", text: e.message };
+  }
+  await refresh();
 }
 async function createCommands() {
   try {

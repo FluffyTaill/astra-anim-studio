@@ -310,3 +310,28 @@ test("smooth dances on a built-in pack: the add-on replaces the bands that have 
   assert.match(table(buildToml(db, "", "day", "", true), "states.dance_mid"), /merge = "extend"/);
   assert.match(table(buildToml({ ...db, smoothDance: false }, "", "day", "", false), "states.dance_mid"), /merge = "extend"/);
 });
+
+// Needs Astra installed here: the built-in pack is read from its avatar engine.
+const engine = path.join(process.env.LOCALAPPDATA || "", "Programs", "Astra", "astra-avatar-engine.exe");
+test("a character on the built-in pack gets one of its own, clips by reference", { skip: !fs.existsSync(engine) }, async () => {
+  const pack = path.join(cfg, "companion", "pack");
+  const dir = path.join(pack, "characters", "my-girl");
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(pack, "companion.toml"), 'character = "my-girl"\n');
+  fs.writeFileSync(path.join(dir, "character.toml"), 'kind = "vrm"\nname = "Моя"\nmodel = "models/my.vrm"\nanimpack = "builtin:nayu-anims"\n');
+  const h = await Harness.create(app).withLanguage("ru").start();
+  assert.equal(JSON.parse((await h.callFromUi("getState")).resultJson).ownPackable, true);
+  const r = await h.callFromUi("makeOwnPack");
+  assert.equal(r.error, "");
+  assert.equal(JSON.parse(r.resultJson).id, "my-girl-anims");
+  const text = fs.readFileSync(path.join(pack, "animpacks", "my-girl-anims", "animpack.toml"), "utf8");
+  assert.match(text, /^uid = "local:my-girl-anims"$/m);
+  assert.match(text, /^name = "Моя \(Anim Studio\)"$/m);
+  assert.doesNotMatch(text, /^\s*file\s*=\s*"clips\//m); // every clip by reference
+  assert.ok((text.match(/^\s*file\s*=\s*"builtin:nayu-anims\//gm) || []).length > 20);
+  assert.match(fs.readFileSync(path.join(dir, "character.toml"), "utf8"), /^animpack = "my-girl-anims"$/m);
+  assert.ok(fs.existsSync(path.join(dir, "character.toml.before-own-pack")));
+  const after = JSON.parse((await h.callFromUi("getState")).resultJson);
+  assert.equal(after.basePack, true);
+  assert.equal(after.ownPackable, false);
+});

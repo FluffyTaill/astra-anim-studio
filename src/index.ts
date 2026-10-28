@@ -1070,6 +1070,94 @@ function basePackFile(charId = activeCharacter()) {
   }
 }
 
+// ── a character's own pack ──────────────────────────────────────────────────
+// A character on a built-in pack (compiled into Astra) cannot take animations into it, and a copy of
+// the character still names that pack. It gets one of its own the way Astra's forks are made: the
+// built-in pack's text, read from the avatar engine, every clip named by reference
+// (builtin:<pack>/<clip> — the same bytes play), saved as a pack on disk beside the others.
+
+// the pack a character plays: "" for none named, which for a VRM body is the built-in 3D one
+const packOf = (c) => c.animpack || (c.kind === "vrm" ? "builtin:nayu-anims" : "");
+
+// whether the worn character can be given its own pack (it is on disk and plays a built-in one)
+function canMakeOwnPack(charId = activeCharacter()) {
+  try {
+    const c = readCharacter(charId);
+    return c.kind === "vrm" && packOf(c).startsWith("builtin:");
+  } catch {
+    return false;
+  }
+}
+
+// Astra's avatar engine, where the built-in packs live: next to Astra's own program (this plugin's
+// parent), else where Astra installs itself
+function engineFile() {
+  const dirs = [];
+  try {
+    const exe = import_node_child_process.execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
+      `(Get-CimInstance Win32_Process -Filter "ProcessId=${process.ppid}").ExecutablePath`],
+      { encoding: "utf8", windowsHide: true, timeout: 20000 }).trim();
+    if (exe) dirs.push(import_node_path.dirname(exe));
+  } catch {}
+  dirs.push(import_node_path.join(process.env.LOCALAPPDATA || "", "Programs", "Astra"));
+  for (const d of dirs) {
+    const f = import_node_path.join(d, "astra-avatar-engine.exe");
+    if (import_node_fs.existsSync(f)) return f;
+  }
+  throw new Error("Не нашёл программу аватара Astra (astra-avatar-engine.exe)");
+}
+
+// In the engine each built-in pack is stored as its id, its name and its text, one after another,
+// and every text opens with "# The built-in …".
+function builtinPackText(pack) {
+  const bin = import_node_fs.readFileSync(engineFile());
+  const id = Buffer.from(pack), marker = Buffer.from("# The built-in ");
+  const isText = (b) => b === 9 || b === 10 || b === 13 || (b >= 32 && b !== 127);
+  for (let from = 0; ; ) {
+    const at = bin.indexOf(id, from);
+    if (at < 0) break;
+    from = at + 1;
+    const start = bin.indexOf(marker, at);
+    if (start < 0 || start - at > 200) continue;
+    let end = start;
+    while (end < bin.length && isText(bin[end])) end++;
+    const next = bin.indexOf(marker, start + 1);
+    if (next > 0 && next < end) end = next;
+    let text = bin.subarray(start, end).toString("utf8");
+    // the next pack's id and name run on after this one's last line
+    const nl = text.lastIndexOf("\n");
+    if (nl > 0 && !/[=#\]]/.test(text.slice(nl + 1))) text = text.slice(0, nl + 1);
+    if (/^\[animpack\]/m.test(text) && /^\[\[clips\]\]/m.test(text) && /^kind\s*=\s*"vrm"/m.test(text)) return text;
+  }
+  throw new Error("Не нашёл встроенный набор в Astra — возможно, у тебя другая версия Astra");
+}
+
+function makeOwnPack(charId = activeCharacter()) {
+  const c = readCharacter(charId);
+  const pack = packOf(c);
+  if (c.kind !== "vrm" || !pack.startsWith("builtin:")) throw new Error("У этого персонажа уже свой набор анимаций");
+  const base = builtinPackText(pack);
+  const stem = (charId.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "") || "character") + "-anims";
+  let id = stem;
+  for (let n = 2; import_node_fs.existsSync(import_node_path.join(PACK_ROOT, "animpacks", id)); n++) id = `${stem}-${n}`;
+  const text = `# ${c.name}: its own copy of Astra's built-in pack "${pack}", made by Anim Studio. Every clip is\n`
+    + `# taken from the built-in pack by reference (${pack}/<clip>), so it plays exactly the same; the studio's\n`
+    + `# animations can be added to it.\n\n`
+    + base.replace(/^(\s*file\s*=\s*")clips\//gm, `$1${pack}/`)
+      .replace(/^(\[animpack\][\s\S]*?^name\s*=\s*)"[^"]*"/m, `$1${tomlStr(c.name + " (Anim Studio)")}\nuid = ${tomlStr("local:" + id)}`);
+  const dir = import_node_path.join(PACK_ROOT, "animpacks", id);
+  import_node_fs.mkdirSync(dir, { recursive: true });
+  import_node_fs.writeFileSync(import_node_path.join(dir, "animpack.toml"), text);
+  // the character plays it from now on; its file as it was is kept beside it
+  const backup = c.file + ".before-own-pack";
+  if (!import_node_fs.existsSync(backup)) import_node_fs.writeFileSync(backup, c.text);
+  const next = /^\s*animpack\s*=/m.test(c.text)
+    ? c.text.replace(/^(\s*animpack\s*=\s*)"[^"]*"/m, `$1${tomlStr(id)}`)
+    : c.text.replace(/^(\s*kind\s*=\s*"[^"]*"[^\n]*\n)/m, `$1animpack = ${tomlStr(id)}\n`);
+  import_node_fs.writeFileSync(c.file, next);
+  return { id, name: c.name };
+}
+
 var FX_BEGIN = "# ── Anim Studio: faces and icons (written by the plugin, rewritten on every Apply) ──";
 var FX_END = "# ── end of Anim Studio ──";
 var FX_DIR = "clips/anim-studio-fx";
@@ -1766,7 +1854,8 @@ function getState(ctx) {
   return {
     anims: db.anims, reroll: db.reroll || [20, 35], life: db.life, characters: listCharacters(), folder: STUDIO,
     period: currentPeriod(), periodHours: PERIOD_HOURS, commands: commandsStatus(ctx), outfit: db.outfit,
-    fxIcons: Object.keys(FX_ICONS), fxHub: fxHub(), basePack: !!basePackFile(), smoothDance: db.smoothDance
+    fxIcons: Object.keys(FX_ICONS), fxHub: fxHub(), basePack: !!basePackFile(), ownPackable: !basePackFile() && canMakeOwnPack(),
+    smoothDance: db.smoothDance
   };
 }
 
@@ -1891,6 +1980,7 @@ export const app = plugin({
         return db.life;
       },
       createCommands: async (_p, ctx) => createCommands(ctx),
+      makeOwnPack: async () => makeOwnPack(),
       // editor: the clip as it is now, and before any edit (to compare), plus her model
       editorOpen: async (p) => {
         const a = loadDb().anims.find((x) => x.id === p.id);
