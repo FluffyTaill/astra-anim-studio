@@ -38,6 +38,9 @@ const I18N = {
     inPackNone: "У надетого персонажа встроенный набор анимаций — в него ничего не добавить. Нажми «Сделать свой набор» над списком анимаций.",
     ownPackNeed: "У надетого персонажа встроенный набор анимаций Astra — в него нельзя добавить анимации, поэтому «В набор персонажа» серый (копия персонажа тоже берёт встроенный). Плагин может сделать ему свой набор: те же анимации, но в него можно добавлять свои.",
     ownPackBtn: "Сделать свой набор", ownPackDone: (n) => `Готово: у персонажа «${n}» свой набор. Нажми «Применить» — аватар перезапустится с ним.`,
+    beat: "Танцы в такт музыке",
+    beatHint: "Танец идёт в темпе трека: Astra меряет темп музыки, и каждый танец ускоряется или замедляется под него, оставаясь целиком. Темп самого танца плагин определяет сам по движению бёдер; если ошибся — поправь в танце («Темп»). После изменения нажми «Применить».",
+    tempo: "Темп", tempoAuto: (n) => (n ? `авто: ${n}` : "авто: не определён, 120"), tempoHint: "Темп, под который анимация сделана (BPM). Пусто — определённый автоматически. Если она в два раза быстрее или медленнее такта, поставь вдвое больше или меньше.",
     smooth: "Плавные танцы",
     smoothHint: "Танцы сменяют друг друга плавно, без стойки ожидания между ними: из танцевальных состояний набора убираются «вход» и «выход» (dance_in / dance_out) и бесконечный танец под темп, добавляются плавный переход и смена танца по интервалу ниже. Свой набор персонажа правится обратимо — выключи, и он станет как был. После изменения нажми «Применить».",
     fxLbl: "Значок", fxNone: "нет", fx_hearts: "💕 сердечки", fx_sparkle: "✨ искорки", fx_sweat: "💧 капля пота", fx_zzz: "💤 Z z z", fx_question: "❓ вопросики", fx_tears: "😢 слёзки", fx_notes: "🎵 ноты", fx_anger: "💢 злость",
@@ -101,6 +104,9 @@ const I18N = {
     inPackNone: "The character worn now has a built-in animation pack — nothing can be added to it. Press \"Make its own pack\" above the animations.",
     ownPackNeed: "The character worn now plays Astra's built-in animation pack — nothing can be added to it, so \"Into the character's pack\" is grey (a copy of the character uses the built-in one too). The plugin can make it a pack of its own: the same animations, and yours can be added.",
     ownPackBtn: "Make its own pack", ownPackDone: (n) => `Done: "${n}" has a pack of its own. Press Apply — the avatar restarts with it.`,
+    beat: "Dances to the beat",
+    beatHint: "A dance plays at the track's tempo: Astra measures the music's tempo, and each dance speeds up or slows down to it, still played whole. The plugin works out the dance's own tempo from how the hips move; if it is wrong, set it in the dance (“Tempo”). Click “Apply” after changing it.",
+    tempo: "Tempo", tempoAuto: (n) => (n ? `auto: ${n}` : "auto: not found, 120"), tempoHint: "The tempo the animation was made at (BPM). Empty: the one measured. If it moves twice too fast or slow for the beat, set double or half.",
     smooth: "Smooth dances",
     smoothHint: "Dances flow into each other with no idle stance between them: the intro and outro (dance_in / dance_out) and the endless tempo-paced dance are taken out of the pack's dance states, and a crossfade and the switch interval below are added. Her own pack is edited reversibly — turn it off and it is as it was. Click “Apply” after changing it.",
     fxLbl: "Icon", fxNone: "none", fx_hearts: "💕 hearts", fx_sparkle: "✨ sparkles", fx_sweat: "💧 sweat drop", fx_zzz: "💤 Z z z", fx_question: "❓ question marks", fx_tears: "😢 tears", fx_notes: "🎵 notes", fx_anger: "💢 anger",
@@ -200,6 +206,7 @@ function render() {
   <div class="card">
     <h2>${T("settings")}</h2>
     <div class="opts" style="margin-bottom:10px">
+      <div class="opt" title="${esc(T("beatHint"))}"><div class="switch ${st.beatSync !== false ? "on" : ""}" onclick="setBeat(${st.beatSync === false})"></div>${T("beat")}</div>
       <div class="opt" title="${esc(T("smoothHint"))}"><div class="switch ${st.smoothDance !== false ? "on" : ""}" onclick="setSmooth(${st.smoothDance === false})"></div>${T("smooth")}</div>
     </div>
     <div class="row">${T("reroll")}
@@ -279,6 +286,9 @@ function animRow(a) {
         <div class="opt">${T("music")}:
           ${["slow", "mid", "fast"].map((b) => `<span class="chip ${a.music?.[b] ? "on" : ""}" onclick="upd('${a.id}', {music: {${b}: ${!a.music?.[b]}}})">${T(b)}</span>`).join("")}
         </div>
+        ${st.beatSync !== false && ["slow", "mid", "fast"].some((b) => a.music?.[b]) ? `<div class="opt" title="${esc(T("tempoHint"))}">${T("tempo")}
+          <input class="text" type="number" min="40" max="240" style="width:70px" value="${a.bpm ?? ""}" placeholder="${a.bpmAuto || 120}" onchange="upd('${a.id}', {bpm: this.value})"> BPM
+          <span class="muted">${T("tempoAuto")(a.bpmAuto)}</span></div>` : ""}
         <div class="opt" title="${esc(T("timesHint"))}">${T("times")}:
           ${PERIODS.map((p) => `<span class="chip ${timesOf(a).includes(p) ? "on" : ""}" onclick="toggleTime('${a.id}', '${p}')">${T(p)}</span>`).join("")}
         </div>
@@ -486,6 +496,12 @@ async function del(id) {
 }
 async function setChar(id, on) {
   await call("setCharacter", { id, on });
+  dirty = true;
+  banner = null;
+  await refresh();
+}
+async function setBeat(on) {
+  await call("setBeat", { on });
   dirty = true;
   banner = null;
   await refresh();

@@ -28,7 +28,7 @@ test("parts of the day by the hour", () => {
 });
 
 test("when bored / to music only take the animations of that part of the day", () => {
-  const db = { anims: [anim("morn", ["morning"]), anim("any", undefined)], reroll: [20, 35] };
+  const db = { anims: [anim("morn", ["morning"]), anim("any", undefined)], reroll: [20, 35], beatSync: false };
   const day = buildToml(db, undefined, "day");
   const morning = buildToml(db, undefined, "morning");
   assert.match(day, /^# time of day: day$/m);
@@ -334,4 +334,26 @@ test("a character on the built-in pack gets one of its own, clips by reference",
   const after = JSON.parse((await h.callFromUi("getState")).resultJson);
   assert.equal(after.basePack, true);
   assert.equal(after.ownPackable, false);
+});
+
+test("dances to the beat: one-point blends over bpm at the band's octave of their tempo, and `bpm` declared", () => {
+  const { buildToml: build } = internals;
+  const dance = (id, bpm, music) => ({ ...anim(id, undefined), bpmAuto: bpm, music, idle: { on: false } });
+  const db = { beatSync: true, smoothDance: false, reroll: [20, 35],
+    anims: [dance("fast_one", 157, { slow: true, mid: true, fast: true }), dance("slowish", 85, { slow: false, mid: true, fast: false }), dance("unknown", 0, { slow: false, mid: false, fast: true })] };
+  const t = build(db, undefined, "day", "", true);
+  const blend = (clip, at) => `loop = false
+blend = { param = "bpm", rate = "match", max_rate = 1.6, points = [{ clip = "${clip}", at = ${at} }] }`;
+  const part = (band) => t.slice(t.indexOf(`[states.dance_${band}]`)).split("\n\n")[0];
+  assert.ok(t.includes('[parameters]\nbpm = { type = "float", default = 120.0 }'));
+  // 157: double time in the slow band, itself in mid and fast; 85 stays 85 in mid
+  assert.ok(part("slow").includes(blend("as_fast_one", "78.5")));
+  assert.ok(part("mid").includes(blend("as_fast_one", "157.0")));
+  assert.ok(part("mid").includes(blend("as_slowish", "85.0")));
+  // no tempo found: 120
+  assert.ok(part("fast").includes(blend("as_unknown", "120.0")));
+  // off: plain clips as before, nothing declared
+  const off = build({ ...db, beatSync: false }, undefined, "day", "", true);
+  assert.ok(!off.includes("[parameters]") && !off.includes("blend ="));
+  assert.ok(off.includes('[[states.dance_mid.variants]]\nclip = "as_slowish"'));
 });

@@ -82,6 +82,130 @@ var OUTFIT_DEFAULTS = { on: false, time: { morning: "", day: "", evening: "", ni
   weather: { clear: "", cloud: "", rain: "", snow: "", storm: "" }, place: null, last: "" };
 var LIFE_DEFAULTS = { on: true, voice: true, morning: "stretch", back: "hello", evening: "yawn", night: "yawn" };
 
+// ── the tempo a dance was animated at ───────────────────────────────────────
+// A dance follows the music when it plays as a blend over Astra's `bpm` (rate = "match": the clip
+// runs at bpm / at), and `at` is the tempo the clip itself moves to. Dancers bob, sway and turn on
+// the beat, so the hips' movement repeats once a beat or once in two: the tempo is where that
+// movement is most like itself again, 0.3–1.6 s on, folded into 80–160 BPM. null when no axis of
+// the hips repeats clearly enough to tell.
+
+// the hips' translation and rotation channels, one curve per axis: [{ times (s), vals }]
+function hipsCurves(b, kind, source) {
+  const curves = [];
+  if (kind === "fbx") {
+    const f = fbxRead(b);
+    const { objs, conns, label } = fbxIndex(f);
+    const hips = new Set([...objs].filter(([, o]) => o.name === "Model" && /(^|:)Hips$/i.test(label(o))).map(([id]) => id));
+    const nodes = conns.filter((c) => c[0].toString() === "OP" && hips.has(c[2]) && /^Lcl (Translation|Rotation)$/.test(c[3].toString())).map((c) => c[1]);
+    for (const cn of nodes) {
+      for (const c of conns) {
+        if (c[0].toString() !== "OP" || c[2] !== cn || !/^d\|[XYZ]$/.test(c[3].toString())) continue;
+        const o = objs.get(c[1]);
+        const kt = o?.children.find((ch) => ch.name === "KeyTime")?.props[0][1];
+        const kv = o?.children.find((ch) => ch.name === "KeyValueFloat")?.props[0][1];
+        if (kt && kv && kt.length === kv.length && kt.length > 8) curves.push({ times: kt.map((t) => Number(t) / FBX_TICKS), vals: kv });
+      }
+    }
+    return curves;
+  }
+  const { json, bin } = readGlb(b);
+  const hips = new Set();
+  const hb = json.extensions?.VRMC_vrm_animation?.humanoid?.humanBones?.hips?.node;
+  if (Number.isInteger(hb)) hips.add(hb);
+  (json.nodes || []).forEach((n, i) => {
+    if (/(^|[:_\s])(hips|pelvis)$/i.test(n.name || "")) hips.add(i);
+  });
+  const anim = (json.animations || []).find((a) => !source || a.name === source) || json.animations?.[0];
+  for (const ch of anim?.channels || []) {
+    if (!hips.has(ch.target?.node) || !["translation", "rotation"].includes(ch.target?.path)) continue;
+    const smp = anim.samplers[ch.sampler];
+    const times = readAccessor(json, bin, smp.input);
+    let vals = readAccessor(json, bin, smp.output);
+    if (!times || !vals || !Array.isArray(vals[0])) continue;
+    if (smp.interpolation === "CUBICSPLINE") vals = vals.filter((_, k) => k % 3 === 1);
+    for (let c = 0; c < vals[0].length; c++) curves.push({ times, vals: vals.map((v) => v[c]) });
+  }
+  return curves;
+}
+
+function danceBpm(b, kind, source) {
+  const FPS = 60;
+  let best = null;
+  for (const cv of hipsCurves(b, kind, source)) {
+    const t0 = cv.times[0], n = Math.floor((cv.times[cv.times.length - 1] - t0) * FPS);
+    if (n < FPS * 3) continue; // under 3 s there is no beat to hear
+    const x = [];
+    for (let i = 0, k = 0; i < n; i++) {
+      const t = t0 + i / FPS;
+      while (k < cv.times.length - 2 && cv.times[k + 1] < t) k++;
+      const span = cv.times[k + 1] - cv.times[k] || 1;
+      const f = Math.max(0, Math.min(1, (t - cv.times[k]) / span));
+      x.push(cv.vals[k] + (cv.vals[k + 1] - cv.vals[k]) * f);
+    }
+    // without the slow drift (a 1.5 s moving average), only what repeats is left
+    const w = Math.round(FPS * 0.75), d = [];
+    for (let i = 0; i < n; i++) {
+      let s = 0, c = 0;
+      for (let j = Math.max(0, i - w); j <= Math.min(n - 1, i + w); j++) { s += x[j]; c++; }
+      d.push(x[i] - s / c);
+    }
+    if (d.reduce((s, v) => s + v * v, 0) < 1e-9) continue; // a flat axis (in place, or not animated)
+    let top = { r: 0, lag: 0 };
+    for (let lag = Math.round(0.3 * FPS); lag <= Math.round(1.6 * FPS) && lag < n / 2; lag++) {
+      let s = 0, a = 0, q = 0;
+      for (let i = 0; i + lag < n; i++) { s += d[i] * d[i + lag]; a += d[i] * d[i]; q += d[i + lag] * d[i + lag]; }
+      const r = a && q ? s / Math.sqrt(a * q) : 0;
+      if (r > top.r) top = { r, lag };
+    }
+    if (top.r > (best?.r ?? 0)) best = top;
+  }
+  if (!best || best.r < 0.35) return null;
+  let bpm = (60 * FPS) / best.lag;
+  while (bpm < 80) bpm *= 2;
+  while (bpm >= 160) bpm /= 2;
+  return Math.round(bpm);
+}
+
+// the file a studio animation plays from, and its kind for hipsCurves
+function clipSourceOf(a) {
+  const f = a.clipFile || a.file;
+  return { path: import_node_path.join(CLIPS, f), kind: /\.fbx$/i.test(f) ? "fbx" : "gltf" };
+}
+
+// Measures the dances that have no tempo yet (once; 0 = could not tell). True when any changed.
+function measureTempos(db) {
+  let changed = false;
+  for (const a of db.anims) {
+    if (a.bpmAuto !== undefined || !BANDS.some((band) => a.music?.[band])) continue;
+    try {
+      const { path, kind } = clipSourceOf(a);
+      a.bpmAuto = danceBpm(import_node_fs.readFileSync(path), kind, a.source) || 0;
+    } catch {
+      a.bpmAuto = 0;
+    }
+    changed = true;
+  }
+  return changed;
+}
+
+// the tempo a dance moves to: the one set on the page, else the measured one, else 120
+var tempoOf = (a) => Number(a.bpm) || Number(a.bpmAuto) || 120;
+
+// One variant of a dance state. In time with the music it is a one-point blend over `bpm`, played
+// once (so the state goes on to its next dance) at bpm / at. Of the dance's tempo, half of it and
+// double it — all on the beat — `at` is the one nearest the band's usual tempo, so a slow track is
+// danced in double time (as Astra's own dance does) rather than in slow motion, and a fast one is
+// not danced at a hurried 1.6×.
+var BAND_TEMPO = { slow: 80, mid: 115, fast: 150 };
+function danceVariant(st, a, band, sync) {
+  const clip = tomlStr("as_" + a.id);
+  if (!sync) return [`[[states.${st}.variants]]`, `clip = ${clip}`];
+  const t = tempoOf(a), want = BAND_TEMPO[band] || 115;
+  const at = [t / 2, t, t * 2].reduce((x, y) => (Math.abs(Math.log(y / want)) < Math.abs(Math.log(x / want)) ? y : x));
+  return [`[[states.${st}.variants]]`, "loop = false",
+    `blend = { param = "bpm", rate = "match", max_rate = 1.6, points = [{ clip = ${clip}, at = ${at.toFixed(1)} }] }`];
+}
+
 function loadDb() {
   let db;
   try {
@@ -92,6 +216,7 @@ function loadDb() {
   }
   db.life = { ...LIFE_DEFAULTS, ...db.life };
   db.smoothDance = db.smoothDance !== false;
+  db.beatSync = db.beatSync !== false;
   db.outfit = { ...OUTFIT_DEFAULTS, ...db.outfit, time: { ...OUTFIT_DEFAULTS.time, ...db.outfit?.time }, weather: { ...OUTFIT_DEFAULTS.weather, ...db.outfit?.weather } };
   return db;
 }
@@ -905,6 +1030,8 @@ function buildToml(db, previewId, period = currentPeriod(), quietGreet = "", own
     `# time of day: ${period}`,
     "[animpack]", 'kind = "vrm"', 'name = "Anim Studio"', `uid = "local:${PACK_ID}"`, ""
   ];
+  const sync = db.beatSync !== false;
+  if (sync) L.push("# the tempo of what plays, sent by Astra: the dances below play at it", "[parameters]", 'bpm = { type = "float", default = 120.0 }', "");
   const on = db.anims.filter((a) => a.enabled || a.id === previewId);
   const now = on.filter((a) => atTime(a, period));
   for (const a of on) {
@@ -922,12 +1049,12 @@ function buildToml(db, previewId, period = currentPeriod(), quietGreet = "", own
   for (const a of idle) L.push("[[states.idle.variants]]", `clip = ${tomlStr("as_" + a.id)}`, `weight = ${Math.max(0.005, Number(a.idle.weight) || 0.15).toFixed(3)}`);
   L.push("", "[states.drag]", 'merge = "extend"', "");
   const [lo, hi] = db.reroll || [20, 35];
-  if (db.smoothDance !== false && !ownPack) L.push(...smoothDanceAddon(now, [lo, hi]));
+  if (db.smoothDance !== false && !ownPack) L.push(...smoothDanceAddon(now, [lo, hi], sync));
   else for (const band of BANDS) {
     const list = now.filter((a) => a.music?.[band]);
     if (!list.length) continue;
     L.push(`[states.dance_${band}]`, 'merge = "extend"', 'pick = "random"', `reroll_secs = [${lo}, ${hi}]`);
-    for (const a of list) L.push(`[[states.dance_${band}.variants]]`, `clip = ${tomlStr("as_" + a.id)}`);
+    for (const a of list) L.push(...danceVariant(`dance_${band}`, a, band, sync));
     L.push("");
   }
   if (previewId || quietGreet) {
@@ -946,6 +1073,7 @@ function buildToml(db, previewId, period = currentPeriod(), quietGreet = "", own
 }
 
 function writePack(db, previewId, quietGreet) {
+  if (measureTempos(db)) saveDb(db);
   import_node_fs.mkdirSync(CLIPS, { recursive: true });
   import_node_fs.writeFileSync(import_node_path.join(STUDIO, "animpack.toml"), buildToml(db, previewId, undefined, quietGreet));
   writeBaseFx(db, previewId);
@@ -1002,13 +1130,13 @@ function smoothDanceText(text, on, reroll = [20, 35]) {
 
 // A built-in pack: the dance states of the bands that have studio dances, made of those alone.
 // Only edges to states the add-on itself declares — the engine checks an add-on on its own too.
-function smoothDanceAddon(now, reroll) {
+function smoothDanceAddon(now, reroll, sync) {
   const L = [];
   const bands = BANDS.filter((b) => now.some((a) => a.music?.[b]));
   for (const band of bands) {
     const st = `dance_${band}`;
     L.push(`[states.${st}]`, 'merge = "replace"', 'pick = "random"', `reroll_secs = [${reroll[0]}, ${reroll[1]}]`, "fade = 0.9");
-    for (const a of now.filter((x) => x.music?.[band])) L.push(`[[states.${st}.variants]]`, `clip = ${tomlStr("as_" + a.id)}`);
+    for (const a of now.filter((x) => x.music?.[band])) L.push(...danceVariant(st, a, band, sync));
     for (const other of bands) {
       if (other !== band) L.push(`[[states.${st}.transitions]]`, `on = "music_${other}"`, `to = "dance_${other}"`, "cut = true");
     }
@@ -1851,11 +1979,12 @@ function editedAnim(a, p = {}) {
 
 function getState(ctx) {
   const db = loadDb();
+  if (measureTempos(db)) saveDb(db);
   return {
     anims: db.anims, reroll: db.reroll || [20, 35], life: db.life, characters: listCharacters(), folder: STUDIO,
     period: currentPeriod(), periodHours: PERIOD_HOURS, commands: commandsStatus(ctx), outfit: db.outfit,
     fxIcons: Object.keys(FX_ICONS), fxHub: fxHub(), basePack: !!basePackFile(), ownPackable: !basePackFile() && canMakeOwnPack(),
-    smoothDance: db.smoothDance
+    smoothDance: db.smoothDance, beatSync: db.beatSync
   };
 }
 
@@ -1902,6 +2031,8 @@ export const app = plugin({
         const before = JSON.stringify([a.inplace, a.expr, a.exprWeight, a.fingers]);
         const patch = p.patch || {};
         for (const k of ["title", "enabled", "speed", "inplace"]) if (k in patch) a[k] = patch[k];
+        // the tempo set by hand; empty goes back to the measured one
+        if ("bpm" in patch) a.bpm = Number(patch.bpm) >= 40 && Number(patch.bpm) <= 240 ? Math.round(Number(patch.bpm)) : undefined;
         if ("base" in patch) a.base = !!patch.base;
         if ("times" in patch) a.times = cleanTimes(patch.times);
         if ("expr" in patch) a.expr = EXPRESSIONS.includes(patch.expr) ? patch.expr : undefined;
@@ -1933,6 +2064,12 @@ export const app = plugin({
           } catch {} // still open somewhere: the entry is gone, the file is merely left behind
         }
         return true;
+      },
+      setBeat: async (p) => {
+        const db = loadDb();
+        db.beatSync = !!p.on;
+        saveDb(db);
+        return db.beatSync;
       },
       setSmooth: async (p) => {
         const db = loadDb();
@@ -2041,5 +2178,5 @@ export const app = plugin({
   healthCheck: () => ({ healthy: true, status: "ok" })
 });
 // for test/*.test.mjs
-export const internals = { buildToml, fxToml, withBaseFx, smoothDanceText, periodOf, timeMatters, fbxToVrma, vrmaEdit, vrmaInfo, readGlb, readAccessor, LIFE_PHRASES, modelAliases, weatherKind };
+export const internals = { buildToml, fxToml, withBaseFx, smoothDanceText, periodOf, timeMatters, fbxToVrma, vrmaEdit, vrmaInfo, readGlb, readAccessor, LIFE_PHRASES, modelAliases, weatherKind, danceBpm, danceVariant };
 if (require.main === module) app.run();
