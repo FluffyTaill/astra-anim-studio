@@ -357,3 +357,17 @@ blend = { param = "bpm", rate = "match", max_rate = 1.6, points = [{ clip = "${c
   assert.ok(!off.includes("[parameters]") && !off.includes("blend ="));
   assert.ok(off.includes('[[states.dance_mid.variants]]\nclip = "as_slowish"'));
 });
+
+test("walks: the built-in walk turns ±90° by side, a studio walk has a clip of its own per side, the peek goes back to idle", () => {
+  const { walkToml, cleanWalk, BUILTIN_WALK } = internals;
+  const pack = "[states.idle]\nclip = \"x\"\n[states.drag]\nclip = \"y\"\n";
+  const t = walkToml({ walks: [{ id: BUILTIN_WALK, speed: 1, builtin: true }, { id: "step", speed: 1.5 }], peek: 0.6 }, pack).join("\n");
+  assert.ok(t.includes('[states.as_walk_builtin_right]') && t.includes('[states.as_walk_builtin_left]'));
+  assert.ok(t.includes('file = "clips/anim-studio/walk_builtin.glb"\nsource = "Walk_Loop"\nrotate = 90'));
+  assert.ok(t.includes('source = "Walk_Loop"\nrotate = -90'));
+  assert.ok(t.includes('file = "clips/anim-studio/walk_step_left.vrma"') && t.includes("speed = 1.50"));
+  assert.ok(t.includes('[states.as_peek]\nclip = "asw_peek"\nloop = false\n[[states.as_peek.transitions]]\non = "clip_finished"\nto = "idle"'));
+  // the first test builds kept one walk in `anim`
+  assert.deepEqual(cleanWalk({ anim: "step", flip: true }).styles, [{ id: "step", flip: false }]);
+  assert.deepEqual(cleanWalk(undefined).styles, [{ id: BUILTIN_WALK, flip: false }]);
+});

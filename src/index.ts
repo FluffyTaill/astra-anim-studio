@@ -21,6 +21,8 @@ import * as import_node_zlib from "node:zlib";
 import * as import_node_child_process from "node:child_process";
 import { plugin, s, tool } from "astra-plugin-sdk";
 import { FX_SPRITES } from "./fx_sprites";
+// Quaternius' Universal Animation Library, Walk_Loop alone (CC0 1.0): the walk that works out of the box
+import WALK_GLB from "../assets/walk_ual.glb";
 
 var CFG = import_node_path.join(process.env.APPDATA || "", "astra", "astra", "config");
 var PACK_ROOT = import_node_path.join(CFG, "companion", "pack");
@@ -150,16 +152,21 @@ function danceBpm(b, kind, source) {
       d.push(x[i] - s / c);
     }
     if (d.reduce((s, v) => s + v * v, 0) < 1e-9) continue; // a flat axis (in place, or not animated)
-    let top = { r: 0, lag: 0 };
-    for (let lag = Math.round(0.3 * FPS); lag <= Math.round(1.6 * FPS) && lag < n / 2; lag++) {
+    const rs = [];
+    for (let lag = Math.round(0.3 * FPS) - 1; lag <= Math.round(1.6 * FPS) + 1 && lag < n / 2; lag++) {
       let s = 0, a = 0, q = 0;
       for (let i = 0; i + lag < n; i++) { s += d[i] * d[i + lag]; a += d[i] * d[i]; q += d[i + lag] * d[i + lag]; }
-      const r = a && q ? s / Math.sqrt(a * q) : 0;
-      if (r > top.r) top = { r, lag };
+      rs.push({ lag, r: a && q ? s / Math.sqrt(a * q) : 0 });
+    }
+    // a real repeat is a PEAK: a curve that only falls away from the shortest lag repeats nothing,
+    // and its maximum would sit on the edge of the range (0.3 s: a fake 200 → 100 BPM)
+    let top = { r: 0, lag: 0 };
+    for (let k = 1; k < rs.length - 1; k++) {
+      if (rs[k].r > rs[k - 1].r && rs[k].r >= rs[k + 1].r && rs[k].r > top.r) top = rs[k];
     }
     if (top.r > (best?.r ?? 0)) best = top;
   }
-  if (!best || best.r < 0.35) return null;
+  if (!best || best.r < 0.25) return null;
   let bpm = (60 * FPS) / best.lag;
   while (bpm < 80) bpm *= 2;
   while (bpm >= 160) bpm /= 2;
@@ -172,17 +179,20 @@ function clipSourceOf(a) {
   return { path: import_node_path.join(CLIPS, f), kind: /\.fbx$/i.test(f) ? "fbx" : "gltf" };
 }
 
-// Measures the dances that have no tempo yet (once; 0 = could not tell). True when any changed.
+// Measures the dances that have no tempo yet, or one measured by an older way of measuring (once;
+// 0 = could not tell). True when any changed. 2: peaks only (1.1.5 took the edge of the range).
+var TEMPO_V = 2;
 function measureTempos(db) {
   let changed = false;
   for (const a of db.anims) {
-    if (a.bpmAuto !== undefined || !BANDS.some((band) => a.music?.[band])) continue;
+    if ((a.bpmAuto !== undefined && a.bpmAutoV === TEMPO_V) || !BANDS.some((band) => a.music?.[band])) continue;
     try {
       const { path, kind } = clipSourceOf(a);
       a.bpmAuto = danceBpm(import_node_fs.readFileSync(path), kind, a.source) || 0;
     } catch {
       a.bpmAuto = 0;
     }
+    a.bpmAutoV = TEMPO_V;
     changed = true;
   }
   return changed;
@@ -217,6 +227,7 @@ function loadDb() {
   db.life = { ...LIFE_DEFAULTS, ...db.life };
   db.smoothDance = db.smoothDance !== false;
   db.beatSync = db.beatSync !== false;
+  db.walk = cleanWalk(db.walk);
   db.outfit = { ...OUTFIT_DEFAULTS, ...db.outfit, time: { ...OUTFIT_DEFAULTS.time, ...db.outfit?.time }, weather: { ...OUTFIT_DEFAULTS.weather, ...db.outfit?.weather } };
   return db;
 }
@@ -740,11 +751,12 @@ function vrmaInfo(b) {
 
 // aliases: expression → the name the worn model keeps it under when that is not the standard one
 // (VRM 0.x models often carry "Surprised" as a custom expression); the track is written under both.
-function vrmaEdit(b, { expr, exprWeight = 1, fingers = 0, mirror, trim, bones, face, aliases = {} } = {}) {
+function vrmaEdit(b, { expr, exprWeight = 1, fingers = 0, mirror, trim, bones, face, rise, aliases = {} } = {}) {
   const hasBones = bones && Object.values(bones).some((k) => k?.length);
   const hasFace = face && Object.values(face).some((k) => k?.length);
   const hasTrim = Array.isArray(trim) && trim.length === 2;
-  if (!expr && !fingers && !mirror && !hasBones && !hasFace && !hasTrim) return b;
+  const hasRise = Array.isArray(rise) && rise.length > 0;
+  if (!expr && !fingers && !mirror && !hasBones && !hasFace && !hasTrim && !hasRise) return b;
   const v = decodeVrma(b);
   const { json, human, world, parentOf, end } = v;
   let { rot, pos, expr: exprs } = v;
@@ -804,6 +816,19 @@ function vrmaEdit(b, { expr, exprWeight = 1, fingers = 0, mirror, trim, bones, f
     }
   }
   if (hasBones) for (const [bone, keys] of Object.entries(bones)) if (keys?.length) addOffset(bone, (t) => qeuler(sampleKeys(keys, t)));
+  // rise: [[t, metres]] added to the hips' height — down past her soles, the window's bottom edge
+  // hides her (as Astra's own jump out of the window does)
+  if (hasRise) {
+    const hips = nodeOf("hips");
+    if (hips !== undefined) {
+      const Ph = P(hips);
+      const tr = pos.get(hips) || { times: frames, vals: frames.map(() => json.nodes[hips].translation || [0, 0, 0]) };
+      pos.set(hips, { times: frames, vals: frames.map((t) => {
+        const v = sampleTrack(tr, t), up = qrotate(qinv(Ph), [0, sampleKeys(rise, t), 0]);
+        return [v[0] + up[0], v[1] + up[1], v[2] + up[2]];
+      }) });
+    }
+  }
 
   if (hasFace) {
     for (const [name, keys] of Object.entries(face)) {
@@ -1362,7 +1387,7 @@ function baseToml(anims, text) {
 // A base pack's text with the studio's part as it should be: the old block cut out, "as_fx_…" names
 // dropped from the hub's `with`, then today's put back. Faces and icons need the hub; animations put
 // in the pack do not. "" when the pack can take nothing.
-function withBaseFx(text, anims, previewId = "") {
+function withBaseFx(text, anims, previewId = "", walkMade = {}) {
   let t = text;
   const b = t.indexOf(FX_BEGIN);
   if (b >= 0) {
@@ -1387,8 +1412,8 @@ function withBaseFx(text, anims, previewId = "") {
     t = t.slice(0, from) + table + t.slice(until);
     fxRows = fxToml(anims, previewId);
   }
-  if (!head && b < 0 && !anims.some((a) => a.base)) return "";
-  const rows = [...baseToml(anims, t), ...fxRows];
+  if (!head && b < 0 && !anims.some((a) => a.base) && !walkMade.walks?.length && !walkMade.peek) return "";
+  const rows = [...baseToml(anims, t), ...walkToml(walkMade, t), ...fxRows];
   if (rows.length) t = `${t.replace(/\n+$/, "\n")}\n${FX_BEGIN}\n${rows.join("\n")}\n${FX_END}\n`;
   return t;
 }
@@ -1398,6 +1423,10 @@ function withBaseFx(text, anims, previewId = "") {
 // first time a pack is touched, a copy of it is kept beside it.
 function writeBaseFx(db, previewId) {
   const anims = db.anims.filter((a) => a.enabled || a.id === previewId);
+  let walkMade = {};
+  try {
+    walkMade = writeWalkClips(db);
+  } catch {} // a walk that cannot be made is left out, the rest is written
   const files = new Set();
   for (const c of listCharacters().list) {
     if (!c.attached) continue;
@@ -1407,7 +1436,7 @@ function writeBaseFx(db, previewId) {
   for (const f of files) {
     try {
       const text = import_node_fs.readFileSync(f, "utf8");
-      const next = smoothDanceText(withBaseFx(text, anims, previewId) || text, db.smoothDance !== false, db.reroll || [20, 35]);
+      const next = smoothDanceText(withBaseFx(text, anims, previewId, walkMade) || text, db.smoothDance !== false, db.reroll || [20, 35]);
       const root = import_node_path.dirname(f);
       // her clips first, so the pack never names a file that is not there yet
       const clipDir = import_node_path.join(root, ...BASE_DIR.split("/"));
@@ -1653,6 +1682,7 @@ function startWatch(ctx) {
       if (!Number.isFinite(idleSec)) continue;
       activity = { idleSec, proc: proc.toLowerCase(), seen: true };
       lifeTick(ctx).catch(() => {});
+      walkTick(ctx).catch(() => {});
     }
   });
   child.on("exit", () => setTimeout(() => startWatch(ctx), 10000).unref()); // died — start again
@@ -1843,6 +1873,355 @@ async function lifeTick(ctx) {
   else await lifeReact(ctx, cfg, "", cfg.evening);
 }
 
+// ── walks and peeks ──────────────────────────────────────────────────────────
+// Now and then, while she stands idle, she walks a little along the screen — her window moves while
+// she plays a step to that side — or ducks below the bottom edge of her window and peeks out.
+// Each walk style is one animation played in place, made to go to the right of the screen (see
+// walkHeading: a side step stays a side step, a forward walk is turned into profile) and mirrored for
+// the left. Every walk picks one of the styles. The engine reports a few of its states in the log, never all of them:
+// she is taken to be standing when the last one it named is not a sitting, dancing or listening one.
+// styles: [{ id, flip (mirror it once more, should it still go the wrong way) }]. The id BUILTIN_WALK is
+// the walk shipped with the plugin: a forward walk the engine turns into profile (`rotate`, ±90°) —
+// it is a .glb, which the studio cannot mirror or turn itself.
+var BUILTIN_WALK = "builtin";
+var BUILTIN_FILE = "walk_builtin.glb";
+var WALK_DEFAULTS = { on: true, styles: [{ id: BUILTIN_WALK, flip: false }], peek: "", every: [3, 8], pace: 1 };
+var PEEK_STATE = "as_peek", PEEK_FILE = "peek.vrma";
+var walkState = (id, dir) => `as_walk_${id}_${dir}`;
+var walkFile = (id, dir) => `walk_${id}_${dir}.vrma`;
+// metres per second a typical in-place walk steps at; her window height ≈ 2 m of the scene
+var WALK_MPS = 0.55;
+var BUILTIN_MPS = 0.85;
+// the peek, over the clip's own length: under the edge, then only her head and shoulders, then back
+var PEEK_RISE = [[0, 0], [0.1, -2.2], [0.22, -2.2], [0.32, -1.2], [0.72, -1.2], [0.8, -2.2], [0.88, -2.2], [1, 0]];
+var PEEK_SPEED = 0.6;
+
+function walkSource(db, id) {
+  if (id === BUILTIN_WALK) return { id, kind: "builtin", title: "Walk (Quaternius)", speed: 1 };
+  const a = db.anims.find((x) => x.id === id);
+  return a && a.kind !== "glb" ? a : null;
+}
+
+// the first test builds kept one walk in `anim` (and `flip`)
+function cleanWalk(w = {}) {
+  const out = { ...WALK_DEFAULTS, ...w };
+  if (!Array.isArray(out.styles)) out.styles = [];
+  if (w.anim && !Array.isArray(w.styles)) out.styles = [{ id: w.anim, flip: false }];
+  delete out.anim;
+  delete out.flip;
+  out.styles = out.styles.filter((s) => s && s.id).map((s) => ({ id: String(s.id), flip: !!s.flip }));
+  return out;
+}
+
+var walkStyles = (db) => db.walk.styles.filter((s) => walkSource(db, s.id));
+
+// The clips the walks and the peek play, made from the chosen animations.
+// made: { walks: [{ id, speed }], peek: speed | 0 }
+function writeWalkClips(db) {
+  const w = db.walk, made = { walks: [], peek: 0 };
+  if (!w.on) return made;
+  for (const s of walkStyles(db)) {
+    const step = walkSource(db, s.id);
+    if (step.kind === "builtin") {
+      import_node_fs.writeFileSync(import_node_path.join(CLIPS, BUILTIN_FILE), WALK_GLB);
+      made.walks.push({ id: s.id, speed: 1, builtin: true });
+      continue;
+    }
+    const raw = rawVrma({ ...step, inplace: true });
+    let right = touchedUp(step) ? vrmaEdit(raw, editOf(step)) : raw;
+    // made to go to her left — the right of the screen, as she faces you: a step that goes the other
+    // way is mirrored, one that goes forward is turned into profile
+    let to = walkHeading(right);
+    if (to !== null && to < 0) {
+      right = vrmaEdit(right, { mirror: true });
+      to = -to;
+    }
+    if (s.flip) right = vrmaEdit(right, { mirror: true });
+    // a yaw on the hips turns her and where her steps go alike (+ towards her left)
+    const turn = to === null ? 0 : 90 - to;
+    if (Math.abs(turn) > 5) {
+      const end = decodeVrma(right).end || 1;
+      right = vrmaEdit(right, { bones: { hips: [[0, 0, turn, 0], [end, 0, turn, 0]] } });
+    }
+    import_node_fs.writeFileSync(import_node_path.join(CLIPS, walkFile(s.id, "right")), right);
+    import_node_fs.writeFileSync(import_node_path.join(CLIPS, walkFile(s.id, "left")), vrmaEdit(right, { mirror: true }));
+    made.walks.push({ id: s.id, speed: Math.max(0.25, Number(step.speed) || 1) });
+  }
+  const look = walkSource(db, w.peek);
+  if (look) {
+    const raw = rawVrma({ ...look, inplace: true });
+    const d = decodeVrma(raw).end || 1;
+    import_node_fs.writeFileSync(import_node_path.join(CLIPS, PEEK_FILE), vrmaEdit(raw, { rise: PEEK_RISE.map(([t, y]) => [t * d, y]) }));
+    made.peek = PEEK_SPEED;
+  }
+  return made;
+}
+
+// Where an in-place walk goes: the foot on the ground slides back under her, so she goes the other
+// way. Degrees from straight at you (0) towards her left (+90, the clip's +X), −90 her right; null
+// when the feet never stand still long enough to tell.
+function walkHeading(b) {
+  const { json, rot, pos, parentOf, human, end } = decodeVrma(b);
+  const at = (node, t) => {
+    const n = json.nodes[node];
+    const q = rot.has(node) ? sampleTrack(rot.get(node), t) : n.rotation || [0, 0, 0, 1];
+    const p = pos.has(node) ? sampleTrack(pos.get(node), t) : n.translation || [0, 0, 0];
+    if (!parentOf.has(node)) return [p, q];
+    const [pp, pq] = at(parentOf.get(node), t), r = qrotate(pq, p);
+    return [[pp[0] + r[0], pp[1] + r[1], pp[2] + r[2]], qmul(pq, q)];
+  };
+  let dx = 0, dz = 0;
+  for (const side of ["leftFoot", "rightFoot"]) {
+    const node = human[side]?.node;
+    if (node === undefined) continue;
+    const ps = [];
+    for (let t = 0; t <= end; t += 1 / GLB_FPS) ps.push(at(node, t)[0]);
+    const low = Math.min(...ps.map((p) => p[1]));
+    for (let k = 1; k < ps.length; k++) {
+      if (ps[k][1] > low + 0.02 || ps[k - 1][1] > low + 0.02) continue;
+      dx -= ps[k][0] - ps[k - 1][0];
+      dz -= ps[k][2] - ps[k - 1][2];
+    }
+  }
+  if (Math.hypot(dx, dz) < 0.05) return null;
+  return Math.atan2(dx, dz) * 180 / Math.PI;
+}
+
+// rows for her own pack: a looping state for each style and side, a peek that goes back to idle
+function walkToml(made = {}, text) {
+  const L = [];
+  const has = (st) => new RegExp(`^\\[states\\.${st}\\]`, "m").test(text);
+  const add = (st, clip, file, loop, speed, extra = []) => {
+    L.push("[[clips]]", `name = ${tomlStr(clip)}`, `file = ${tomlStr(`${BASE_DIR}/${file}`)}`, ...extra, `loop = ${loop}`, `fade = ${loop ? "0.40" : "0.30"}`);
+    if (speed !== 1) L.push(`speed = ${speed.toFixed(2)}`);
+    L.push("", `[states.${st}]`, `clip = ${tomlStr(clip)}`, `loop = ${loop}`);
+    if (!loop && has("idle")) L.push(`[[states.${st}.transitions]]`, 'on = "clip_finished"', 'to = "idle"');
+    if (has("drag")) L.push(`[[states.${st}.transitions]]`, 'on = "dragged"', 'to = "drag"');
+    L.push("");
+  };
+  for (const { id, speed, builtin } of made.walks || []) {
+    for (const dir of ["right", "left"]) {
+      if (builtin) add(walkState(id, dir), `asw_${id}_${dir}`, BUILTIN_FILE, true, speed, ['source = "Walk_Loop"', `rotate = ${dir === "right" ? 90 : -90}`]);
+      else add(walkState(id, dir), `asw_${id}_${dir}`, walkFile(id, dir), true, speed);
+    }
+  }
+  if (made.peek) add(PEEK_STATE, "asw_peek", PEEK_FILE, false, made.peek);
+  return L;
+}
+
+// The avatar's window, moved by a small PowerShell helper: it finds the window, checks the engine lets
+// it move ("pinned" when she stands on the taskbar or sits on a window edge — there the engine holds
+// the window, and only Astra's own stroll along the edge moves her), says where it is
+// and how much room the screen has ("ready|x|width|height|left|right"), then waits for one line
+// "dx|px per second" and slides it there, speeding up and slowing down at the ends ("slow" when it starts to). It stops early when the window is grabbed or moved by
+// anyone else, and says how it ended.
+var MOVER_PS = `
+Add-Type @'
+using System; using System.Runtime.InteropServices;
+public class AW {
+  public delegate bool EnumProc(IntPtr h, IntPtr l);
+  [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc p, IntPtr l);
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+  [StructLayout(LayoutKind.Sequential)] public struct R { public int L, T, Ri, B; }
+  [StructLayout(LayoutKind.Sequential)] public struct P { public int X, Y; }
+  [StructLayout(LayoutKind.Sequential)] public struct MI { public int cb; public R m; public R w; public uint f; }
+  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out R r);
+  [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h, IntPtr a, int x, int y, int cx, int cy, uint f);
+  [DllImport("user32.dll")] public static extern short GetAsyncKeyState(int k);
+  [DllImport("user32.dll")] public static extern bool GetCursorPos(out P p);
+  [DllImport("user32.dll")] public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr c);
+  [DllImport("user32.dll")] public static extern IntPtr MonitorFromWindow(IntPtr h, uint f);
+  [DllImport("user32.dll")] public static extern bool GetMonitorInfo(IntPtr m, ref MI i);
+  public static IntPtr Find(uint pid) {
+    IntPtr best = IntPtr.Zero; long area = 0;
+    EnumWindows((h, l) => { uint p; GetWindowThreadProcessId(h, out p);
+      if (p == pid && IsWindowVisible(h)) { R r; GetWindowRect(h, out r); long a = (long)(r.Ri - r.L) * (r.B - r.T); if (a > area) { area = a; best = h; } }
+      return true; }, IntPtr.Zero);
+    return best;
+  }
+}
+'@
+[AW]::SetThreadDpiAwarenessContext([IntPtr]-4) | Out-Null
+$e = Get-Process astra-avatar-engine -ErrorAction SilentlyContinue | Select-Object -First 1
+if (-not $e) { [Console]::Out.WriteLine('none'); exit }
+$h = [AW]::Find([uint32]$e.Id)
+if ($h -eq [IntPtr]::Zero) { [Console]::Out.WriteLine('none'); exit }
+$r = New-Object AW+R; [AW]::GetWindowRect($h, [ref]$r) | Out-Null
+$mi = New-Object AW+MI; $mi.cb = [Runtime.InteropServices.Marshal]::SizeOf($mi)
+[AW]::GetMonitorInfo([AW]::MonitorFromWindow($h, 2), [ref]$mi) | Out-Null
+# standing on the taskbar or sitting on a window edge, the engine holds her window where it is
+[AW]::SetWindowPos($h, [IntPtr]::Zero, $r.L + 1, $r.T, 0, 0, 0x15) | Out-Null; Start-Sleep -Milliseconds 120
+$q = New-Object AW+R; [AW]::GetWindowRect($h, [ref]$q) | Out-Null
+if ($q.L -ne $r.L + 1) { [Console]::Out.WriteLine('pinned'); exit }
+[AW]::SetWindowPos($h, [IntPtr]::Zero, $r.L, $r.T, 0, 0, 0x15) | Out-Null
+[Console]::Out.WriteLine("ready|$($r.L)|$($r.Ri - $r.L)|$($r.B - $r.T)|$($mi.w.L)|$($mi.w.Ri)"); [Console]::Out.Flush()
+$line = [Console]::In.ReadLine()
+if (-not $line) { exit }
+$dx, $v = $line.Split('|') | ForEach-Object { [double]$_ }
+$d = [Math]::Abs($dx); $sg = [Math]::Sign($dx)
+$ease = [Math]::Min(0.7, [Math]::Sqrt($d / $v))
+$dur = $d / $v + $ease; $slow = $false
+$x0 = $r.L; $y0 = $r.T; $last = $x0
+$sw = [Diagnostics.Stopwatch]::StartNew()
+while ($true) {
+  $t = [Math]::Min($dur, $sw.Elapsed.TotalSeconds)
+  $c = New-Object AW+R; [AW]::GetWindowRect($h, [ref]$c) | Out-Null
+  if ([Math]::Abs($c.L - $last) -gt 3 -or [Math]::Abs($c.T - $y0) -gt 3) { [Console]::Out.WriteLine('moved'); exit }
+  $p = New-Object AW+P; [AW]::GetCursorPos([ref]$p) | Out-Null
+  if (([AW]::GetAsyncKeyState(1) -band 0x8000) -and $p.X -ge $c.L -and $p.X -lt $c.Ri -and $p.Y -ge $c.T -and $p.Y -lt $c.B) { [Console]::Out.WriteLine('grabbed'); exit }
+  if ($t -lt $ease) { $s = $v * $t * $t / (2 * $ease) }
+  elseif ($t -lt $dur - $ease) { $s = $v * $ease / 2 + $v * ($t - $ease) }
+  else { $s = $d - $v * ($dur - $t) * ($dur - $t) / (2 * $ease) }
+  if (-not $slow -and $t -ge $dur - $ease) { $slow = $true; [Console]::Out.WriteLine('slow'); [Console]::Out.Flush() }
+  $last = [int][Math]::Round($x0 + $sg * $s)
+  [AW]::SetWindowPos($h, [IntPtr]::Zero, $last, $y0, 0, 0, 0x15) | Out-Null
+  if ($t -ge $dur) { [Console]::Out.WriteLine('done'); exit }
+  Start-Sleep -Milliseconds 15
+}`;
+
+function startMover() {
+  const child = import_node_child_process.spawn("powershell.exe",
+    ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", Buffer.from(MOVER_PS, "utf16le").toString("base64")],
+    { windowsHide: true, stdio: ["pipe", "pipe", "ignore"] });
+  const lines = [];
+  let buf = "", wake = null, ended = false;
+  child.stdout.on("data", (d) => {
+    buf += d.toString();
+    const parts = buf.split(/\r?\n/);
+    buf = parts.pop();
+    lines.push(...parts.map((x) => x.trim()).filter(Boolean));
+    wake?.();
+  });
+  child.on("exit", () => {
+    ended = true;
+    wake?.();
+  });
+  const next = async (ms) => {
+    const until = Date.now() + ms;
+    while (!lines.length && !ended && Date.now() < until) await new Promise((r) => ((wake = r), setTimeout(r, 200)));
+    return lines.shift() || "";
+  };
+  return { child, next, send: (s) => child.stdin.write(s + "\n"), kill: () => child.kill() };
+}
+
+// What the engine last said she is doing: { state, at (ms), music (ms of the last music cue, 0 = none) }
+function avatarState() {
+  const out = { state: "idle", at: 0, music: 0 };
+  try {
+    const log = latestLog();
+    const fd = import_node_fs.openSync(log, "r");
+    const size = import_node_fs.fstatSync(fd).size;
+    const n = Math.min(size, 256 * 1024);
+    const b = Buffer.alloc(n);
+    import_node_fs.readSync(fd, b, 0, n, size - n);
+    import_node_fs.closeSync(fd);
+    for (const line of b.toString("utf8").split(/\r?\n/)) {
+      const at = Date.parse(line.slice(0, 27)) || 0;
+      if (/\[manifest\] loaded/.test(line)) Object.assign(out, { state: "greet", at, music: 0 });
+      const m = /\[anim\] (\w+) : \S+ -> (\S+)/.exec(line);
+      if (!m) continue;
+      Object.assign(out, { state: m[2], at });
+      if (/^music_(slow|mid|fast)$/.test(m[1])) out.music = at;
+      if (m[1] === "music_stop") out.music = 0;
+    }
+  } catch {}
+  return out;
+}
+
+function standing(s = avatarState(), now = Date.now()) {
+  if (/^sit/.test(s.state)) return false;
+  if (s.music && now - s.music < 75000) return false; // music on: she dances
+  if (/^(dance|listen)/.test(s.state) && now - s.at < 60000) return false;
+  return true;
+}
+
+var walk = { busy: false, next: 0 };
+
+// One walk to a side with room: `side` forces one ("left"/"right"), else the side with more room;
+// `id` forces a style, else a random one. The window speeds up and slows down over EASE_S, and she
+// goes back to idle as it starts to slow, so the step fades out while she stops.
+async function walkOnce(ctx, db, side, id) {
+  const styles = walkStyles(db);
+  const style = styles.find((s) => s.id === id) || pick(styles);
+  const m = startMover();
+  try {
+    const ready = await m.next(20000);
+    const [tag, x, w, h, lo, hi] = ready.split("|");
+    if (tag === "pinned") return { ok: false, note: "pinned" };
+    if (tag !== "ready") return { ok: false, note: "no avatar window" };
+    const roomL = Number(x) - Number(lo), roomR = Number(hi) - Number(x) - Number(w);
+    const dir = side || (roomR >= roomL ? "right" : "left");
+    const room = dir === "right" ? roomR : roomL;
+    if (room < 80) return { ok: false, note: "no room" };
+    const dist = Math.min(room, Math.max(120, room * (0.3 + Math.random() * 0.4)));
+    const pace = Math.max(0.3, Math.min(3, Number(db.walk.pace) || 1));
+    const step = walkSource(db, style.id);
+    // a forward walk covers more ground a step than a side step
+    const pxPerSec = (step?.kind === "builtin" ? BUILTIN_MPS : WALK_MPS) * (Number(h) / 2) * (Number(step?.speed) || 1) * pace;
+    await ctx.fireTrigger("anim_play", { state: walkState(style.id, dir) });
+    m.send(`${dir === "right" ? dist : -dist}|${pxPerSec}`);
+    const limit = Date.now() + Math.ceil(dist / pxPerSec) * 1000 + 15000;
+    let how = "";
+    while (Date.now() < limit) {
+      how = await m.next(limit - Date.now());
+      if (how === "slow") {
+        await ctx.fireTrigger("anim_play", { state: "idle" });
+        continue;
+      }
+      break;
+    }
+    if (how !== "done" && how !== "grabbed" && how !== "moved") await ctx.fireTrigger("anim_play", { state: "idle" });
+    return { ok: true, dir, style: style.id, dist: Math.round(dist), how };
+  } finally {
+    m.kill();
+  }
+}
+
+// "free" when the engine lets her window move, "pinned" when it holds it (taskbar, a window edge)
+async function walkPlace() {
+  const m = startMover();
+  try {
+    const first = await m.next(20000);
+    return first === "pinned" ? "pinned" : first.startsWith("ready") ? "free" : "none";
+  } finally {
+    m.kill();
+  }
+}
+
+async function walkAct(ctx, what, id) {
+  if (walk.busy || avatarBusy) return { ok: false, note: "busy" };
+  walk.busy = true;
+  try {
+    const db = loadDb();
+    if (what === "peek") {
+      if (!walkSource(db, db.walk.peek)) return { ok: false, note: "no peek animation" };
+      await ctx.fireTrigger("anim_play", { state: PEEK_STATE });
+      return { ok: true };
+    }
+    if (!walkStyles(db).length) return { ok: false, note: "no walk animation" };
+    return await walkOnce(ctx, db, what === "left" || what === "right" ? what : "", id);
+  } finally {
+    walk.busy = false;
+  }
+}
+
+async function walkTick(ctx) {
+  const db = loadDb();
+  const w = db.walk;
+  if (!w.on || walk.busy || avatarBusy) return;
+  const now = Date.now();
+  const [lo, hi] = w.every;
+  if (!walk.next) walk.next = now + minutes(lo, hi);
+  if (now < walk.next) return;
+  if (GAMES.has(activity.proc) || (import_node_fs.existsSync(WORK_FLAG) && activity.idleSec < 30)) return;
+  if (!standing()) return;
+  walk.next = now + minutes(lo, hi);
+  const canWalk = walkStyles(db).length > 0, canPeek = !!walkSource(db, w.peek);
+  if (!canWalk && !canPeek) return;
+  await walkAct(ctx, canPeek && (!canWalk || Math.random() < 0.3) ? "peek" : "walk");
+}
+
 // ── the two Astra commands that act on this plugin's triggers ───────────────
 // Astra reads commands.json when it starts and does not write it back on its own, so the commands are
 // added to the file and appear after Astra is restarted.
@@ -1984,7 +2363,7 @@ function getState(ctx) {
     anims: db.anims, reroll: db.reroll || [20, 35], life: db.life, characters: listCharacters(), folder: STUDIO,
     period: currentPeriod(), periodHours: PERIOD_HOURS, commands: commandsStatus(ctx), outfit: db.outfit,
     fxIcons: Object.keys(FX_ICONS), fxHub: fxHub(), basePack: !!basePackFile(), ownPackable: !basePackFile() && canMakeOwnPack(),
-    smoothDance: db.smoothDance, beatSync: db.beatSync
+    smoothDance: db.smoothDance, beatSync: db.beatSync, walk: db.walk
   };
 }
 
@@ -2116,6 +2495,23 @@ export const app = plugin({
         saveDb(db);
         return db.life;
       },
+      setWalk: async (p) => {
+        const db = loadDb();
+        const patch = p.patch || {};
+        if ("on" in patch) db.walk.on = !!patch.on;
+        if ("peek" in patch) db.walk.peek = db.anims.some((a) => a.id === patch.peek) ? String(patch.peek) : "";
+        if (Array.isArray(patch.styles)) db.walk = cleanWalk({ ...db.walk, styles: patch.styles.filter((x) => x?.id === BUILTIN_WALK || db.anims.some((a) => a.id === x?.id)) });
+        if ("pace" in patch) db.walk.pace = Math.max(0.3, Math.min(3, Number(patch.pace) || 1));
+        if (Array.isArray(patch.every)) {
+          const lo = Math.max(1, Math.min(120, Number(patch.every[0]) || 3));
+          db.walk.every = [lo, Math.max(lo, Math.min(240, Number(patch.every[1]) || lo))];
+          walk.next = 0;
+        }
+        saveDb(db);
+        return db.walk;
+      },
+      testWalk: async (p, ctx) => walkAct(ctx, String(p.what || "walk"), p.id ? String(p.id) : ""),
+      walkPlace: async () => (walk.busy ? "busy" : walkPlace()),
       createCommands: async (_p, ctx) => createCommands(ctx),
       makeOwnPack: async () => makeOwnPack(),
       // editor: the clip as it is now, and before any edit (to compare), plus her model
@@ -2178,5 +2574,5 @@ export const app = plugin({
   healthCheck: () => ({ healthy: true, status: "ok" })
 });
 // for test/*.test.mjs
-export const internals = { buildToml, fxToml, withBaseFx, smoothDanceText, periodOf, timeMatters, fbxToVrma, vrmaEdit, vrmaInfo, readGlb, readAccessor, LIFE_PHRASES, modelAliases, weatherKind, danceBpm, danceVariant };
+export const internals = { buildToml, fxToml, withBaseFx, smoothDanceText, periodOf, timeMatters, fbxToVrma, vrmaEdit, vrmaInfo, readGlb, readAccessor, LIFE_PHRASES, modelAliases, weatherKind, danceBpm, danceVariant, walkToml, writeWalkClips, cleanWalk, walkHeading, avatarState, standing, BUILTIN_WALK };
 if (require.main === module) app.run();

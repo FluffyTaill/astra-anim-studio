@@ -25,6 +25,15 @@ const I18N = {
     times: "Время", morning: "утро", day: "день", evening: "вечер", night: "ночь", anyTime: "в любое время",
     impTimes: "Когда играть (от скуки и под музыку)", lastTime: "Хотя бы одна часть суток должна остаться",
     timesHint: "утро 5–12 · день 12–18 · вечер 18–24 · ночь 0–5. Когда наступает другая часть суток, аватар перезапускается сам — как только ты минуту не трогаешь компьютер.",
+    walk: "Прогулки", walkOn: "Иногда гуляет и выглядывает",
+    walkHint: "Когда она стоит без дела (не сидит, не танцует), то иногда проходит немного вбок — окно плавно едет вместе с ней, — или прячется за нижний край окна и выглядывает. Походок может быть несколько — каждый раз берётся случайная. Походка — анимация «на месте»: шаг вбок остаётся шагом вбок, обычную ходьбу вперёд плагин сам разворачивает в профиль — куда она идёт, плагин определяет по ногам, вторая сторона делается зеркально. Схватишь её мышкой — остановится. Нужны свой набор персонажа и команды Astra (карточка «Время суток»). После изменений — «Применить».",
+    walkAnim: "Походки", walkAdd: "＋ походка", walkPeek: "Выглядывать (оглядывается)", walkNone: "— нет —", walkFlip: "наоборот",
+    walkFlipHint: "Идёт не в ту сторону — отразить",
+    walkEvery: "Раз в", walkMin: "мин", walkPace: "Скорость окна", walkTest: "▶ Пройтись", peekTest: "▶ Выглянуть",
+    walkNeedPack: "Прогулкам нужен свой набор персонажа: со встроенным они не работают.",
+    walkFailed: (n) => `Не получилось: ${n}`,
+    walkBuiltin: "Ходьба (встроенная, Quaternius)",
+    walkPinned: "Она стоит на панели задач или сидит на краю окна — там окно держит сама Astra и сдвинуть его нельзя. Перетащи её мышкой повыше, в свободное место экрана.",
     outfit: "Наряд", outfitOn: "Менять наряд по времени суток и погоде",
     outfitHint: "Выбери, какой из её вариантов (персонажей) надевать. Погода важнее времени. Если переоденешь её сам, твой выбор остаётся до следующей смены времени суток или погоды.",
     outfitByTime: "По времени суток", outfitByWeather: "По погоде", outfitKeep: "— не менять —",
@@ -91,6 +100,15 @@ const I18N = {
     times: "Time", morning: "morning", day: "day", evening: "evening", night: "night", anyTime: "any time",
     impTimes: "When to play it (when bored and to music)", lastTime: "At least one part of the day has to stay",
     timesHint: "morning 5–12 · day 12–18 · evening 18–24 · night 0–5. When another part of the day begins the avatar restarts by itself — once you leave the computer alone for a minute.",
+    walk: "Walks", walkOn: "Walks and peeks now and then",
+    walkHint: "While she stands idle (not sitting or dancing) she now and then walks a little to the side — her window glides with her — or hides below the bottom edge of her window and peeks out. Add several walks and each time one is picked at random. A walk is an in-place animation: a side step stays a side step, an ordinary forward walk is turned into profile — the plugin tells where it goes from her feet — and the other side is mirrored. Grab her with the mouse and she stops. Needs the character's own pack and the Astra commands (Time of day card). After changes — Apply.",
+    walkAnim: "Walks", walkAdd: "＋ walk", walkPeek: "Peek (looks around)", walkNone: "— none —", walkFlip: "reverse",
+    walkFlipHint: "Goes the wrong way — mirror it",
+    walkEvery: "Every", walkMin: "min", walkPace: "Window speed", walkTest: "▶ Walk", peekTest: "▶ Peek",
+    walkNeedPack: "Walks need the character's own pack: they do not work with a built-in one.",
+    walkFailed: (n) => `Did not work: ${n}`,
+    walkBuiltin: "Walk (built in, Quaternius)",
+    walkPinned: "She stands on the taskbar or sits on a window edge — there Astra itself holds her window and it cannot be moved. Drag her higher up, to a free part of the screen.",
     outfit: "Outfit", outfitOn: "Change her outfit by the time of day and the weather",
     outfitHint: "Pick which of her versions (characters) to wear. The weather wins over the time. If you change her yourself, your pick stays until the next part of the day or weather.",
     outfitByTime: "By the time of day", outfitByWeather: "By the weather", outfitKeep: "— keep —",
@@ -202,6 +220,7 @@ function render() {
     ${st.anims.length ? st.anims.map(animRow).join("") : `<div class="empty">${T("none")}</div>`}
   </div>
   ${lifeCard()}
+  ${walkCard()}
   ${outfitCard()}
   <div class="card">
     <h2>${T("settings")}</h2>
@@ -402,6 +421,77 @@ async function toggleTime(id, p) {
   const next = cur.includes(p) ? cur.filter((x) => x !== p) : [...cur, p];
   if (!next.length) return toast(T("lastTime"));
   await upd(id, { times: next });
+}
+function walkCard() {
+  const W = st.walk || {};
+  const usable = st.anims.filter((a) => a.kind !== "glb");
+  const styles = W.styles || [];
+  const animSel = (on) => usable.map((a) => `<option value="${esc(a.id)}" ${a.id === on ? "selected" : ""}>${esc(a.title)}</option>`).join("");
+  const styleSel = (on) => `<option value="builtin" ${on === "builtin" ? "selected" : ""}>${T("walkBuiltin")}</option>${animSel(on)}`;
+  const styleRow = (s, i) => `<div class="opt" style="justify-content:space-between;min-width:min(560px,100%)">
+    <span class="row"><select class="text" style="width:auto;min-width:180px" onchange="setStyle(${i}, {id: this.value})">${styleSel(s.id)}</select>
+      ${s.id === "builtin" ? "" : `<span class="opt" title="${esc(T("walkFlipHint"))}"><div class="switch ${s.flip ? "on" : ""}" onclick="setStyle(${i}, {flip: ${!s.flip}})"></div>${T("walkFlip")}</span>`}</span>
+    <span class="row"><button class="btn" onclick="testWalk('walk', '${esc(s.id)}')">${T("walkTest")}</button><button class="btn" onclick="delStyle(${i})">✕</button></span></div>`;
+  const every = W.every || [3, 8];
+  return `<div class="card">
+    <h2>${T("walk")}</h2>
+    <div class="muted" style="margin-bottom:10px">${T("walkHint")}</div>
+    ${st.basePack ? "" : `<div class="notice">${T("walkNeedPack")}</div>`}
+    ${W.on && walkWhere === "pinned" ? `<div class="notice">${T("walkPinned")}</div>` : ""}
+    <div class="opts" style="margin-bottom:10px">
+      <div class="opt"><div class="switch ${W.on ? "on" : ""}" onclick="setWalk({on: ${!W.on}})"></div>${T("walkOn")}</div>
+    </div>
+    ${W.on ? `<div style="display:grid;gap:8px">
+      <div class="row" style="justify-content:space-between"><b>${T("walkAnim")}</b>
+        <button class="btn" onclick="addStyle()">${T("walkAdd")}</button></div>
+      ${styles.map(styleRow).join("")}
+      <div class="opt" style="justify-content:space-between;min-width:min(560px,100%)"><span>${T("walkPeek")}</span>
+        <span class="row"><select class="text" style="width:auto;min-width:200px" onchange="setWalk({peek: this.value})">
+          <option value="">${T("walkNone")}</option>${animSel(W.peek || "")}</select>
+          <button class="btn" onclick="testWalk('peek')">${T("peekTest")}</button></span></div>
+      <div class="opts">
+        <div class="opt">${T("walkEvery")}
+          <input class="text" style="width:60px" type="number" min="1" value="${every[0]}" onchange="setWalk({every: [this.value, ${every[1]}]})"> –
+          <input class="text" style="width:60px" type="number" min="1" value="${every[1]}" onchange="setWalk({every: [${every[0]}, this.value]})"> ${T("walkMin")}</div>
+        <div class="opt">${T("walkPace")}
+          <input type="range" min="30" max="300" value="${Math.round((W.pace || 1) * 100)}" onchange="setWalk({pace: this.value / 100})"> ${Math.round((W.pace || 1) * 100)}%</div>
+      </div></div>` : ""}
+  </div>`;
+}
+const walkStylesNow = () => (st.walk?.styles || []).map((s) => ({ ...s }));
+async function setStyle(i, patch) {
+  const styles = walkStylesNow();
+  Object.assign(styles[i], patch);
+  await setWalk({ styles });
+}
+async function addStyle() {
+  const used = new Set(walkStylesNow().map((s) => s.id));
+  const a = st.anims.find((x) => x.kind !== "glb" && !used.has(x.id));
+  await setWalk({ styles: [...walkStylesNow(), { id: a ? a.id : "builtin", flip: false }] });
+}
+async function delStyle(i) {
+  await setWalk({ styles: walkStylesNow().filter((_, k) => k !== i) });
+}
+async function setWalk(patch) {
+  await call("setWalk", { patch });
+  if (patch.on) checkWalkPlace();
+  if (["on", "peek", "styles"].some((k) => k in patch)) dirty = true;
+  await refresh();
+}
+// whether Astra holds her window (taskbar, a window edge): asked when the page opens and after a walk test
+let walkWhere = "";
+function checkWalkPlace() {
+  if (!st.walk?.on) return;
+  call("walkPlace").then((w) => { if (w !== "busy" && w !== walkWhere) { walkWhere = w; render(); } }).catch(() => {});
+}
+async function testWalk(what, id) {
+  const r = await call("testWalk", { what, id });
+  if (r?.note === "pinned") walkWhere = "pinned";
+  else if (r?.ok) walkWhere = "free";
+  if (r && r.ok === false) {
+    banner = r.note === "pinned" ? { cls: "notice", text: T("walkPinned") } : { cls: "err", text: T("walkFailed")(r.note) };
+    render();
+  }
 }
 async function setLife(patch) {
   await call("setLife", { patch });
@@ -638,6 +728,6 @@ ${why}` };
   };
 }
 
-refresh().catch((e) => {
+refresh().then(checkWalkPlace).catch((e) => {
   document.getElementById("root").innerHTML = `<div class="err">Anim Studio: ${esc(e.message)}</div>`;
 });
